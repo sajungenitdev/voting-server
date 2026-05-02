@@ -2,8 +2,9 @@ const express = require("express");
 const authRoutes = require("./auth.routes");
 const adminRoutes = require("./admin.routes");
 const pollRoutes = require("./poll.routes");
-const voteRoutes = require('./vote.routes');
-const categoryRoutes = require('./category.routes');
+const voteRoutes = require("./vote.routes");
+const categoryRoutes = require("./category.routes");
+const commentRoutes = require("./comment.routes");
 
 const router = express.Router();
 
@@ -11,9 +12,10 @@ const router = express.Router();
 router.use("/auth", authRoutes);
 router.use("/admin", adminRoutes);
 router.use("/polls", pollRoutes);
-router.use('/votes', voteRoutes);
-router.use('/categories', categoryRoutes);
-router.use('/votes', voteRoutes);
+router.use("/votes", voteRoutes);
+router.use("/categories", categoryRoutes);
+router.use("/votes", voteRoutes);
+router.use("/comments", commentRoutes);
 
 // Test route
 router.get("/status", (req, res) => {
