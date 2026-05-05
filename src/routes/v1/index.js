@@ -5,6 +5,7 @@ const pollRoutes = require("./poll.routes");
 const voteRoutes = require("./vote.routes");
 const categoryRoutes = require("./category.routes");
 const commentRoutes = require("./comment.routes");
+const b2bRoutes = require('./b2b.routes');
 
 const router = express.Router();
 
@@ -16,6 +17,7 @@ router.use("/votes", voteRoutes);
 router.use("/categories", categoryRoutes);
 router.use("/votes", voteRoutes);
 router.use("/comments", commentRoutes);
+router.use('/b2b', b2bRoutes); 
 
 // Test route
 router.get("/status", (req, res) => {

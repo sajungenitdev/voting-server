@@ -39,6 +39,13 @@ const {
   getSystemLogs,
   clearCache,
   getBackup,
+
+  // Category Management (ADD THESE)
+  getAllCategories,
+  createCategory,
+  updateCategory,
+  deleteCategory,
+  getCategoryById,
 } = require("../../controllers/admin.controller");
 
 const router = express.Router();
@@ -113,6 +120,9 @@ router.post(
       "sports",
       "technology",
       "business",
+      "education",
+      "health",
+      "gaming",
       "other",
     ]),
     body("candidates")
@@ -183,6 +193,52 @@ router.put(
       .withMessage("Invalid status"),
   ]),
   moderateComment,
+);
+
+// ==================== CATEGORY MANAGEMENT ====================
+// Get all categories
+router.get("/categories", getAllCategories);
+
+// Get single category
+router.get(
+  "/categories/:id",
+  validate([param("id").isMongoId().withMessage("Invalid category ID")]),
+  getCategoryById,
+);
+
+// Create new category
+router.post(
+  "/categories",
+  validate([
+    body("name").notEmpty().withMessage("Category name is required"),
+    body("displayName").notEmpty().withMessage("Display name is required"),
+    body("icon").optional(),
+    body("color").optional(),
+    body("order").optional().isInt(),
+  ]),
+  createCategory,
+);
+
+// Update category
+router.put(
+  "/categories/:id",
+  validate([
+    param("id").isMongoId().withMessage("Invalid category ID"),
+    body("displayName").optional(),
+    body("description").optional(),
+    body("icon").optional(),
+    body("color").optional(),
+    body("order").optional().isInt(),
+    body("isActive").optional().isBoolean(),
+  ]),
+  updateCategory,
+);
+
+// Delete category
+router.delete(
+  "/categories/:id",
+  validate([param("id").isMongoId().withMessage("Invalid category ID")]),
+  deleteCategory,
 );
 
 // ==================== SYSTEM MANAGEMENT ====================

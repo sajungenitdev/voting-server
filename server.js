@@ -5,7 +5,8 @@ const app = require("./src/app");
 const connectDB = require("./src/config/database");
 const {
   initDefaultCategories,
-} = require("./src/controllers/category.controller"); // ✅ Already added
+} = require("./src/controllers/category.controller");
+const seedDataCategories = require("./src/utils/seedB2BCategories");
 
 // Load environment variables
 dotenv.config();
@@ -62,12 +63,14 @@ io.on("connection", (socket) => {
   });
 });
 
-// Connect to database and start server
+// Connect to database and start server - SINGLE CONNECTION
 connectDB()
   .then(async () => {
-    // ✅ Added async
-    // Initialize default categories
-    await initDefaultCategories(); // ✅ Already added
+    // Initialize default categories (for polls)
+    await initDefaultCategories();
+
+    // Initialize B2B data categories
+    await seedDataCategories();
 
     server.listen(PORT, () => {
       console.log(`
@@ -89,6 +92,7 @@ connectDB()
     process.exit(1);
   });
 
+// Graceful shutdown handlers
 process.on("SIGTERM", () => {
   console.log("SIGTERM signal received: closing HTTP server");
   server.close(() => {

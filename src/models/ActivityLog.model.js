@@ -39,6 +39,10 @@ const activityLogSchema = new mongoose.Schema(
         "DELETE_USER",
         "TOGGLE_USER_STATUS",
         "MODERATE_COMMENT",
+        // Category actions (ADD THESE)
+        "CREATE_CATEGORY",
+        "UPDATE_CATEGORY",
+        "DELETE_CATEGORY",
       ],
     },
     status: {
