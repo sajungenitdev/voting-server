@@ -21,28 +21,44 @@ const activityLogSchema = new mongoose.Schema(
         "RESET_PASSWORD",
         "CHANGE_PASSWORD",
         "LOGIN_FAILED",
+
         // Poll actions
         "CREATE_POLL",
         "UPDATE_POLL",
         "DELETE_POLL",
         "PUBLISH_POLL",
         "UNPUBLISH_POLL",
+
         // Vote actions
         "CAST_VOTE",
+
         // Comment actions
         "CREATE_COMMENT",
         "DELETE_COMMENT",
         "LIKE_COMMENT",
         "UNLIKE_COMMENT",
+
         // Admin actions
         "UPDATE_USER_ROLE",
         "DELETE_USER",
         "TOGGLE_USER_STATUS",
         "MODERATE_COMMENT",
-        // Category actions (ADD THESE)
+
+        // User Management actions
+        "CREATE_USER",
+        "UPDATE_USER",
+
+        // Category actions
         "CREATE_CATEGORY",
         "UPDATE_CATEGORY",
         "DELETE_CATEGORY",
+
+        // B2B Actions (ADD THESE)
+        "CREATE_B2B_CATEGORY",
+        "UPDATE_B2B_CATEGORY",
+        "DELETE_B2B_CATEGORY",
+        "APPROVE_B2B_REQUEST",
+        "REJECT_B2B_REQUEST",
       ],
     },
     status: {
@@ -59,7 +75,7 @@ const activityLogSchema = new mongoose.Schema(
   },
 );
 
-// Indexes for better performance
+// Indexes
 activityLogSchema.index({ createdAt: -1 });
 activityLogSchema.index({ user: 1, action: 1 });
 activityLogSchema.index({ action: 1, status: 1 });

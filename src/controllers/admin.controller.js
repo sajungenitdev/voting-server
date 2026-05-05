@@ -7,17 +7,12 @@ const AppError = require("../utils/AppError");
 
 // ==================== DASHBOARD & ANALYTICS ====================
 
-/**
- * Get dashboard statistics
- */
 exports.getDashboardStats = async (req, res, next) => {
   try {
     const now = new Date();
     const startOfToday = new Date(now.setHours(0, 0, 0, 0));
     const startOfWeek = new Date(now.setDate(now.getDate() - 7));
-    const startOfMonth = new Date(now.setMonth(now.getMonth() - 1));
 
-    // Get counts
     const [totalUsers, totalPolls, totalVotes, totalComments] =
       await Promise.all([
         User.countDocuments(),
@@ -26,37 +21,24 @@ exports.getDashboardStats = async (req, res, next) => {
         Comment.countDocuments(),
       ]);
 
-    // Get active polls
     const activePolls = await Poll.countDocuments({
       isPublished: true,
       startDate: { $lte: new Date() },
       endDate: { $gt: new Date() },
     });
 
-    // Get today's stats
     const [newUsersToday, newVotesToday, newPollsToday] = await Promise.all([
       User.countDocuments({ createdAt: { $gte: startOfToday } }),
       Vote.countDocuments({ createdAt: { $gte: startOfToday } }),
       Poll.countDocuments({ createdAt: { $gte: startOfToday } }),
     ]);
 
-    // Get weekly engagement
     const weeklyEngagement = await Vote.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startOfWeek },
-        },
-      },
-      {
-        $group: {
-          _id: { $dayOfWeek: "$createdAt" },
-          votes: { $sum: 1 },
-        },
-      },
+      { $match: { createdAt: { $gte: startOfWeek } } },
+      { $group: { _id: { $dayOfWeek: "$createdAt" }, votes: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]);
 
-    // Get voter turnout
     const voterTurnout =
       totalUsers > 0 ? ((totalVotes / totalUsers) * 100).toFixed(2) : 0;
 
@@ -85,13 +67,9 @@ exports.getDashboardStats = async (req, res, next) => {
   }
 };
 
-/**
- * Get detailed analytics
- */
 exports.getAnalytics = async (req, res, next) => {
   try {
     const { period = "month" } = req.query;
-
     let startDate;
     const now = new Date();
 
@@ -109,7 +87,6 @@ exports.getAnalytics = async (req, res, next) => {
         startDate = new Date(now.setMonth(now.getMonth() - 1));
     }
 
-    // Polls by category
     const pollsByCategory = await Poll.aggregate([
       {
         $group: {
@@ -121,13 +98,8 @@ exports.getAnalytics = async (req, res, next) => {
       { $sort: { count: -1 } },
     ]);
 
-    // User growth over time
     const userGrowth = await User.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startDate },
-        },
-      },
+      { $match: { createdAt: { $gte: startDate } } },
       {
         $group: {
           _id: {
@@ -141,7 +113,6 @@ exports.getAnalytics = async (req, res, next) => {
       { $sort: { "_id.year": 1, "_id.month": 1, "_id.day": 1 } },
     ]);
 
-    // Vote distribution
     const voteDistribution = await Vote.aggregate([
       {
         $lookup: {
@@ -151,18 +122,10 @@ exports.getAnalytics = async (req, res, next) => {
           as: "pollInfo",
         },
       },
-      {
-        $unwind: "$pollInfo",
-      },
-      {
-        $group: {
-          _id: "$pollInfo.category",
-          totalVotes: { $sum: 1 },
-        },
-      },
+      { $unwind: "$pollInfo" },
+      { $group: { _id: "$pollInfo.category", totalVotes: { $sum: 1 } } },
     ]);
 
-    // Top performing polls
     const topPolls = await Poll.find()
       .sort({ totalVotes: -1 })
       .limit(5)
@@ -194,24 +157,16 @@ exports.getAnalytics = async (req, res, next) => {
   }
 };
 
-/**
- * Get voter turnout statistics
- */
 exports.getVoterTurnout = async (req, res, next) => {
   try {
     const totalUsers = await User.countDocuments();
     const totalVotes = await Vote.countDocuments();
-
-    // Unique voters (users who voted at least once)
     const uniqueVoters = await Vote.distinct("user").then(
       (users) => users.length,
     );
 
-    // Poll-specific turnout
     const pollTurnout = await Poll.aggregate([
-      {
-        $match: { isPublished: true },
-      },
+      { $match: { isPublished: true } },
       {
         $lookup: {
           from: "votes",
@@ -253,9 +208,6 @@ exports.getVoterTurnout = async (req, res, next) => {
 
 // ==================== USER MANAGEMENT ====================
 
-/**
- * Get all users with pagination and filters
- */
 exports.getAllUsers = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -263,7 +215,6 @@ exports.getAllUsers = async (req, res, next) => {
     const skip = (page - 1) * limit;
     const { role, isVerified, search } = req.query;
 
-    // Build filter
     let filter = {};
     if (role) filter.role = role;
     if (isVerified !== undefined) filter.isVerified = isVerified === "true";
@@ -287,12 +238,7 @@ exports.getAllUsers = async (req, res, next) => {
       success: true,
       data: {
         users,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       },
     });
   } catch (error) {
@@ -300,20 +246,13 @@ exports.getAllUsers = async (req, res, next) => {
   }
 };
 
-/**
- * Get user by ID
- */
 exports.getUserById = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id).select(
       "-password -refreshToken",
     );
+    if (!user) return next(new AppError(404, "User not found"));
 
-    if (!user) {
-      return next(new AppError(404, "User not found"));
-    }
-
-    // Get user statistics
     const [votesCount, pollsCreated, commentsCount] = await Promise.all([
       Vote.countDocuments({ user: user._id }),
       Poll.countDocuments({ createdBy: user._id }),
@@ -336,22 +275,13 @@ exports.getUserById = async (req, res, next) => {
   }
 };
 
-/**
- * Update user role
- */
 exports.updateUserRole = async (req, res, next) => {
   try {
     const { role } = req.body;
     const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return next(new AppError(404, "User not found"));
-    }
-
-    // Prevent changing own role
-    if (user._id.toString() === req.user._id.toString()) {
+    if (!user) return next(new AppError(404, "User not found"));
+    if (user._id.toString() === req.user._id.toString())
       return next(new AppError(400, "You cannot change your own role"));
-    }
 
     user.role = role;
     await user.save();
@@ -373,21 +303,13 @@ exports.updateUserRole = async (req, res, next) => {
   }
 };
 
-/**
- * Toggle user status (activate/deactivate)
- */
 exports.toggleUserStatus = async (req, res, next) => {
   try {
     const { isActive } = req.body;
     const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return next(new AppError(404, "User not found"));
-    }
-
-    // Prevent deactivating own account
-    if (user._id.toString() === req.user._id.toString()) {
-      return next(new AppError(400, "You cannot change your own status"));
+    if (!user) return next(new AppError(404, "User not found"));
+    if (user._id.toString() === req.user._id.toString() && isActive === false) {
+      return next(new AppError(400, "You cannot deactivate your own account"));
     }
 
     user.isActive = isActive;
@@ -404,7 +326,7 @@ exports.toggleUserStatus = async (req, res, next) => {
       success: true,
       message: `User ${isActive ? "activated" : "deactivated"} successfully`,
       data: {
-        user: { id: user._id, email: user.email, isActive: user.isActive },
+        user: { _id: user._id, email: user.email, isActive: user.isActive },
       },
     });
   } catch (error) {
@@ -412,23 +334,13 @@ exports.toggleUserStatus = async (req, res, next) => {
   }
 };
 
-/**
- * Delete user
- */
 exports.deleteUser = async (req, res, next) => {
   try {
     const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return next(new AppError(404, "User not found"));
-    }
-
-    // Prevent deleting own account
-    if (user._id.toString() === req.user._id.toString()) {
+    if (!user) return next(new AppError(404, "User not found"));
+    if (user._id.toString() === req.user._id.toString())
       return next(new AppError(400, "You cannot delete your own account"));
-    }
 
-    // Delete all user data
     await Promise.all([
       Vote.deleteMany({ user: user._id }),
       Comment.deleteMany({ user: user._id }),
@@ -447,18 +359,14 @@ exports.deleteUser = async (req, res, next) => {
       details: { deletedUser: user.email },
     });
 
-    res.status(200).json({
-      success: true,
-      message: "User deleted successfully",
-    });
+    res
+      .status(200)
+      .json({ success: true, message: "User deleted successfully" });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Get activity logs
- */
 exports.getActivityLogs = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -484,12 +392,7 @@ exports.getActivityLogs = async (req, res, next) => {
       success: true,
       data: {
         logs,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       },
     });
   } catch (error) {
@@ -497,11 +400,76 @@ exports.getActivityLogs = async (req, res, next) => {
   }
 };
 
+// ==================== CREATE USER ====================
+
+exports.createUser = async (req, res, next) => {
+  try {
+    const { name, email, password, role, isVerified, isActive } = req.body;
+    const bcrypt = require("bcryptjs");
+
+    if (!name || !email) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Name and email are required" });
+    }
+
+    const existingUser = await User.findOne({ email: email.toLowerCase() });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: "User already exists with this email",
+      });
+    }
+
+    const userPassword = password || "Default123!";
+    const salt = await bcrypt.genSalt(12);
+    const hashedPassword = await bcrypt.hash(userPassword, salt);
+
+    const user = await User.create({
+      name,
+      email: email.toLowerCase(),
+      password: hashedPassword,
+      role: role || "user",
+      isVerified: isVerified !== undefined ? isVerified : true,
+      isActive: isActive !== undefined ? isActive : true,
+    });
+
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "CREATE_USER",
+      status: "SUCCESS",
+      details: {
+        createdUser: user.email,
+        role: user.role,
+        createdBy: req.user.email,
+      },
+    });
+
+    res.status(201).json({
+      success: true,
+      message: "User created successfully",
+      data: {
+        user: {
+          _id: user._id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          isVerified: user.isVerified,
+          isActive: user.isActive,
+          createdAt: user.createdAt,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to create user",
+    });
+  }
+};
+
 // ==================== POLL MANAGEMENT ====================
 
-/**
- * Get all polls with filters
- */
 exports.getAllPolls = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -536,12 +504,7 @@ exports.getAllPolls = async (req, res, next) => {
       success: true,
       data: {
         polls,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       },
     });
   } catch (error) {
@@ -549,30 +512,18 @@ exports.getAllPolls = async (req, res, next) => {
   }
 };
 
-/**
- * Get poll by ID with details
- */
 exports.getPollById = async (req, res, next) => {
   try {
     const poll = await Poll.findById(req.params.id).populate(
       "createdBy",
       "name email",
     );
+    if (!poll) return next(new AppError(404, "Poll not found"));
 
-    if (!poll) {
-      return next(new AppError(404, "Poll not found"));
-    }
-
-    // Get vote statistics
     const totalVotes = await Vote.countDocuments({ poll: poll._id });
     const candidateResults = await Vote.aggregate([
       { $match: { poll: poll._id } },
-      {
-        $group: {
-          _id: "$candidate",
-          votes: { $sum: 1 },
-        },
-      },
+      { $group: { _id: "$candidate", votes: { $sum: 1 } } },
     ]);
 
     res.status(200).json({
@@ -594,9 +545,6 @@ exports.getPollById = async (req, res, next) => {
   }
 };
 
-/**
- * Create poll (admin)
- */
 exports.createPoll = async (req, res, next) => {
   try {
     const { title, description, category, candidates, startDate, endDate } =
@@ -610,7 +558,7 @@ exports.createPoll = async (req, res, next) => {
       createdBy: req.user._id,
       startDate: startDate || new Date(),
       endDate,
-      isPublished: true, // Admin creates published polls
+      isPublished: true,
     });
 
     await ActivityLog.create({
@@ -630,16 +578,10 @@ exports.createPoll = async (req, res, next) => {
   }
 };
 
-/**
- * Update poll
- */
 exports.updatePoll = async (req, res, next) => {
   try {
     const poll = await Poll.findById(req.params.id);
-
-    if (!poll) {
-      return next(new AppError(404, "Poll not found"));
-    }
+    if (!poll) return next(new AppError(404, "Poll not found"));
 
     const updatedPoll = await Poll.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
@@ -663,23 +605,15 @@ exports.updatePoll = async (req, res, next) => {
   }
 };
 
-/**
- * Delete poll
- */
 exports.deletePoll = async (req, res, next) => {
   try {
     const poll = await Poll.findById(req.params.id);
+    if (!poll) return next(new AppError(404, "Poll not found"));
 
-    if (!poll) {
-      return next(new AppError(404, "Poll not found"));
-    }
-
-    // Delete all related votes and comments
     await Promise.all([
       Vote.deleteMany({ poll: poll._id }),
       Comment.deleteMany({ poll: poll._id }),
     ]);
-
     await poll.deleteOne();
 
     await ActivityLog.create({
@@ -689,34 +623,25 @@ exports.deletePoll = async (req, res, next) => {
       details: { pollId: poll._id, pollTitle: poll.title },
     });
 
-    res.status(200).json({
-      success: true,
-      message: "Poll deleted successfully",
-    });
+    res
+      .status(200)
+      .json({ success: true, message: "Poll deleted successfully" });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Publish poll
- */
 exports.publishPoll = async (req, res, next) => {
   try {
     const poll = await Poll.findById(req.params.id);
-
-    if (!poll) {
-      return next(new AppError(404, "Poll not found"));
-    }
+    if (!poll) return next(new AppError(404, "Poll not found"));
 
     poll.isPublished = true;
     await poll.save();
 
-    // Notify via socket.io
     const io = req.app.get("io");
-    if (io) {
+    if (io)
       io.emit("poll-published", { pollId: poll._id, pollTitle: poll.title });
-    }
 
     await ActivityLog.create({
       user: req.user._id,
@@ -735,16 +660,10 @@ exports.publishPoll = async (req, res, next) => {
   }
 };
 
-/**
- * Unpublish poll
- */
 exports.unpublishPoll = async (req, res, next) => {
   try {
     const poll = await Poll.findById(req.params.id);
-
-    if (!poll) {
-      return next(new AppError(404, "Poll not found"));
-    }
+    if (!poll) return next(new AppError(404, "Poll not found"));
 
     poll.isPublished = false;
     await poll.save();
@@ -768,9 +687,6 @@ exports.unpublishPoll = async (req, res, next) => {
 
 // ==================== VOTE MANAGEMENT ====================
 
-/**
- * Get all votes with filters
- */
 exports.getAllVotes = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -796,12 +712,7 @@ exports.getAllVotes = async (req, res, next) => {
       success: true,
       data: {
         votes,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       },
     });
   } catch (error) {
@@ -809,35 +720,16 @@ exports.getAllVotes = async (req, res, next) => {
   }
 };
 
-/**
- * Get poll results with aggregation
- */
 exports.getPollResults = async (req, res, next) => {
   try {
     const poll = await Poll.findById(req.params.id);
-    if (!poll) {
-      return next(new AppError(404, "Poll not found"));
-    }
+    if (!poll) return next(new AppError(404, "Poll not found"));
 
     const results = await Vote.aggregate([
       { $match: { poll: poll._id } },
-      {
-        $group: {
-          _id: "$candidate",
-          votes: { $sum: 1 },
-        },
-      },
-      {
-        $lookup: {
-          from: "polls",
-          localField: "poll",
-          foreignField: "_id",
-          as: "pollInfo",
-        },
-      },
+      { $group: { _id: "$candidate", votes: { $sum: 1 } } },
     ]);
 
-    // Calculate percentages
     const totalVotes = results.reduce((sum, r) => sum + r.votes, 0);
     const candidateDetails = poll.candidates.map((candidate) => {
       const voteData = results.find(
@@ -856,11 +748,7 @@ exports.getPollResults = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        poll: {
-          id: poll._id,
-          title: poll.title,
-          category: poll.category,
-        },
+        poll: { id: poll._id, title: poll.title, category: poll.category },
         results: candidateDetails,
         totalVotes,
         timestamp: new Date(),
@@ -871,21 +759,16 @@ exports.getPollResults = async (req, res, next) => {
   }
 };
 
-/**
- * Export poll results as CSV
- */
 exports.exportPollResults = async (req, res, next) => {
   try {
     const poll = await Poll.findById(req.params.id);
-    if (!poll) {
-      return next(new AppError(404, "Poll not found"));
-    }
+    if (!poll) return next(new AppError(404, "Poll not found"));
 
-    const votes = await Vote.find({ poll: poll._id })
-      .populate("user", "name email")
-      .populate("poll", "title");
+    const votes = await Vote.find({ poll: poll._id }).populate(
+      "user",
+      "name email",
+    );
 
-    // Generate CSV
     let csv = "Vote ID,User Name,User Email,Candidate,Timestamp\n";
     for (const vote of votes) {
       const candidate = poll.candidates.find(
@@ -907,9 +790,6 @@ exports.exportPollResults = async (req, res, next) => {
 
 // ==================== COMMENT MODERATION ====================
 
-/**
- * Get all comments with filters
- */
 exports.getAllComments = async (req, res, next) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -936,12 +816,7 @@ exports.getAllComments = async (req, res, next) => {
       success: true,
       data: {
         comments,
-        pagination: {
-          page,
-          limit,
-          total,
-          pages: Math.ceil(total / limit),
-        },
+        pagination: { page, limit, total, pages: Math.ceil(total / limit) },
       },
     });
   } catch (error) {
@@ -949,16 +824,10 @@ exports.getAllComments = async (req, res, next) => {
   }
 };
 
-/**
- * Delete comment (moderation)
- */
 exports.deleteComment = async (req, res, next) => {
   try {
     const comment = await Comment.findById(req.params.id);
-
-    if (!comment) {
-      return next(new AppError(404, "Comment not found"));
-    }
+    if (!comment) return next(new AppError(404, "Comment not found"));
 
     await comment.deleteOne();
 
@@ -969,26 +838,19 @@ exports.deleteComment = async (req, res, next) => {
       details: { commentId: comment._id },
     });
 
-    res.status(200).json({
-      success: true,
-      message: "Comment deleted successfully",
-    });
+    res
+      .status(200)
+      .json({ success: true, message: "Comment deleted successfully" });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * Moderate comment (approve/reject/flag)
- */
 exports.moderateComment = async (req, res, next) => {
   try {
     const { status } = req.body;
     const comment = await Comment.findById(req.params.id);
-
-    if (!comment) {
-      return next(new AppError(404, "Comment not found"));
-    }
+    if (!comment) return next(new AppError(404, "Comment not found"));
 
     if (status === "rejected") {
       await comment.deleteOne();
@@ -1004,90 +866,9 @@ exports.moderateComment = async (req, res, next) => {
       details: { commentId: comment._id, status },
     });
 
-    res.status(200).json({
-      success: true,
-      message: `Comment ${status} successfully`,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// ==================== SYSTEM MANAGEMENT ====================
-
-/**
- * Get system logs
- */
-exports.getSystemLogs = async (req, res, next) => {
-  try {
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 100;
-    const skip = (page - 1) * limit;
-    const { level = "error", timeRange = "24h" } = req.query;
-
-    // This would integrate with your logging system (Winston)
-    // For now, return recent activity logs
-    const logs = await ActivityLog.find()
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit);
-
-    res.status(200).json({
-      success: true,
-      data: {
-        logs,
-        pagination: { page, limit, total: logs.length },
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Clear cache (if using Redis)
- */
-exports.clearCache = async (req, res, next) => {
-  try {
-    // Implement cache clearing logic if using Redis
-    // For now, just return success
-    res.status(200).json({
-      success: true,
-      message: "Cache cleared successfully",
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * Create database backup
- */
-exports.getBackup = async (req, res, next) => {
-  try {
-    const [users, polls, votes, comments] = await Promise.all([
-      User.find().select("-password -refreshToken"),
-      Poll.find(),
-      Vote.find(),
-      Comment.find(),
-    ]);
-
-    const backup = {
-      timestamp: new Date(),
-      data: {
-        users,
-        polls,
-        votes,
-        comments,
-      },
-    };
-
-    res.setHeader("Content-Type", "application/json");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=backup_${Date.now()}.json`,
-    );
-    res.status(200).json(backup);
+    res
+      .status(200)
+      .json({ success: true, message: `Comment ${status} successfully` });
   } catch (error) {
     next(error);
   }
@@ -1095,37 +876,30 @@ exports.getBackup = async (req, res, next) => {
 
 // ==================== CATEGORY MANAGEMENT ====================
 
-// Get all categories (poll categories)
 exports.getAllCategories = async (req, res, next) => {
   try {
     const Category = require("../models/Category.model");
     const categories = await Category.find({ isActive: true }).sort({
       order: 1,
     });
-
-    res.status(200).json({
-      success: true,
-      count: categories.length,
-      data: { categories },
-    });
+    res
+      .status(200)
+      .json({ success: true, count: categories.length, data: { categories } });
   } catch (error) {
     next(error);
   }
 };
 
-// Create new poll category
 exports.createCategory = async (req, res, next) => {
   try {
     const { name, displayName, description, icon, color, order } = req.body;
     const Category = require("../models/Category.model");
 
-    // Check if category already exists
     const existingCategory = await Category.findOne({
       name: name.toLowerCase(),
     });
-    if (existingCategory) {
+    if (existingCategory)
       return next(new AppError(400, "Category already exists"));
-    }
 
     const category = await Category.create({
       name: name.toLowerCase(),
@@ -1154,7 +928,6 @@ exports.createCategory = async (req, res, next) => {
   }
 };
 
-// Update category
 exports.updateCategory = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -1166,10 +939,7 @@ exports.updateCategory = async (req, res, next) => {
       { displayName, description, icon, color, order, isActive },
       { new: true, runValidators: true },
     );
-
-    if (!category) {
-      return next(new AppError(404, "Category not found"));
-    }
+    if (!category) return next(new AppError(404, "Category not found"));
 
     await ActivityLog.create({
       user: req.user._id,
@@ -1188,7 +958,6 @@ exports.updateCategory = async (req, res, next) => {
   }
 };
 
-// Delete category
 exports.deleteCategory = async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -1196,11 +965,8 @@ exports.deleteCategory = async (req, res, next) => {
     const Poll = require("../models/Poll.model");
 
     const category = await Category.findById(id);
-    if (!category) {
-      return next(new AppError(404, "Category not found"));
-    }
+    if (!category) return next(new AppError(404, "Category not found"));
 
-    // Check if any polls use this category
     const pollsUsingCategory = await Poll.countDocuments({
       category: category.name,
     });
@@ -1222,30 +988,426 @@ exports.deleteCategory = async (req, res, next) => {
       details: { categoryName: category.name },
     });
 
-    res.status(200).json({
-      success: true,
-      message: "Category deleted successfully",
-    });
+    res
+      .status(200)
+      .json({ success: true, message: "Category deleted successfully" });
   } catch (error) {
     next(error);
   }
 };
 
-// Get single category
 exports.getCategoryById = async (req, res, next) => {
   try {
     const { id } = req.params;
     const Category = require("../models/Category.model");
 
     const category = await Category.findById(id);
-    if (!category) {
-      return next(new AppError(404, "Category not found"));
-    }
+    if (!category) return next(new AppError(404, "Category not found"));
+
+    res.status(200).json({ success: true, data: { category } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ==================== SYSTEM MANAGEMENT ====================
+
+exports.getSystemLogs = async (req, res, next) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100;
+    const skip = (page - 1) * limit;
+
+    const logs = await ActivityLog.find()
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+    res.status(200).json({
+      success: true,
+      data: { logs, pagination: { page, limit, total: logs.length } },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.clearCache = async (req, res, next) => {
+  res
+    .status(200)
+    .json({ success: true, message: "Cache cleared successfully" });
+};
+
+exports.getBackup = async (req, res, next) => {
+  try {
+    const [users, polls, votes, comments] = await Promise.all([
+      User.find().select("-password -refreshToken"),
+      Poll.find(),
+      Vote.find(),
+      Comment.find(),
+    ]);
+
+    const backup = {
+      timestamp: new Date(),
+      data: { users, polls, votes, comments },
+    };
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=backup_${Date.now()}.json`,
+    );
+    res.status(200).json(backup);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ==================== B2B MANAGEMENT ====================
+
+exports.getB2BRequests = async (req, res, next) => {
+  try {
+    const B2BRequest = require("../models/B2BRequest.model");
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+    const { status } = req.query;
+
+    let filter = {};
+    if (status) filter.status = status;
+
+    const [requests, total] = await Promise.all([
+      B2BRequest.find(filter)
+        .populate("user", "companyName email phoneNumber")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      B2BRequest.countDocuments(filter),
+    ]);
 
     res.status(200).json({
       success: true,
+      data: { requests },
+      total,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.approveB2BRequest = async (req, res, next) => {
+  try {
+    const B2BRequest = require("../models/B2BRequest.model");
+    const request = await B2BRequest.findById(req.params.id);
+    if (!request) return next(new AppError(404, "Request not found"));
+
+    request.status = "approved";
+    request.approvedAt = new Date();
+    request.approvedBy = req.user._id;
+    await request.save();
+
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "APPROVE_B2B_REQUEST",
+      status: "SUCCESS",
+      details: { requestId: request._id, company: request.fullName },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Request approved successfully",
+      data: { request },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.rejectB2BRequest = async (req, res, next) => {
+  try {
+    const B2BRequest = require("../models/B2BRequest.model");
+    const { reason } = req.body;
+    const request = await B2BRequest.findById(req.params.id);
+    if (!request) return next(new AppError(404, "Request not found"));
+
+    request.status = "rejected";
+    request.rejectionReason = reason || "No reason provided";
+    await request.save();
+
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "REJECT_B2B_REQUEST",
+      status: "SUCCESS",
+      details: { requestId: request._id, company: request.fullName, reason },
+    });
+
+    res
+      .status(200)
+      .json({ success: true, message: "Request rejected", data: { request } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getB2BSubscriptions = async (req, res, next) => {
+  try {
+    const B2BSubscription = require("../models/B2BSubscription.model");
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const [subscriptions, total] = await Promise.all([
+      B2BSubscription.find()
+        .populate("user", "companyName email phoneNumber")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      B2BSubscription.countDocuments(),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: { subscriptions },
+      total,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getB2BPayments = async (req, res, next) => {
+  try {
+    const B2BSubscription = require("../models/B2BSubscription.model");
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const [payments, total] = await Promise.all([
+      B2BSubscription.find({ paymentStatus: "completed" })
+        .populate("user", "companyName email")
+        .select(
+          "transactionId tier price priceBDT paymentMethod paymentStatus createdAt user",
+        )
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      B2BSubscription.countDocuments({ paymentStatus: "completed" }),
+    ]);
+
+    const formattedPayments = payments.map((payment) => ({
+      _id: payment._id,
+      transactionId: payment.transactionId,
+      tier: payment.tier,
+      amount: payment.price,
+      amountBDT: payment.priceBDT,
+      paymentMethod: payment.paymentMethod,
+      status: payment.paymentStatus,
+      createdAt: payment.createdAt,
+      user: payment.user,
+    }));
+
+    res.status(200).json({
+      success: true,
+      data: { payments: formattedPayments },
+      total,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.getB2BUsers = async (req, res, next) => {
+  try {
+    const B2BUser = require("../models/B2BUser.model");
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      B2BUser.find()
+        .select("-password")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit),
+      B2BUser.countDocuments(),
+    ]);
+
+    res.status(200).json({
+      success: true,
+      data: { users },
+      total,
+      pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ==================== B2B CATEGORY MANAGEMENT ====================
+
+exports.getB2BCategories = async (req, res, next) => {
+  try {
+    const DataCategory = require("../models/DataCategory.model");
+    const categories = await DataCategory.find({ isActive: true }).sort({
+      order: 1,
+      name: 1,
+    });
+    res.status(200).json({ success: true, data: { categories } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// Create a new B2B category
+exports.createB2BCategory = async (req, res, next) => {
+  try {
+    const DataCategory = require("../models/DataCategory.model");
+    const {
+      name,
+      displayName,
+      description,
+      icon,
+      color,
+      requiredPlan,
+      sensitivity,
+      isActive,
+    } = req.body;
+
+    // Validation
+    if (!name || !displayName) {
+      return res.status(400).json({
+        success: false,
+        message: "Name and display name are required",
+      });
+    }
+
+    // Check if category already exists
+    const existingCategory = await DataCategory.findOne({
+      name: name.toLowerCase(),
+    });
+    if (existingCategory) {
+      return res.status(400).json({
+        success: false,
+        message: `Category with name "${name}" already exists. Please use a different name.`,
+      });
+    }
+
+    // Create category
+    const category = await DataCategory.create({
+      name: name.toLowerCase(),
+      displayName,
+      description: description || "",
+      icon: icon || "📋",
+      color: color || "#ef4444",
+      requiredPlan: requiredPlan || "basic",
+      sensitivity: sensitivity || "low",
+      isActive: isActive !== undefined ? isActive : true,
+    });
+
+    // Log activity - wrap in try-catch to prevent main operation failure
+    try {
+      await ActivityLog.create({
+        user: req.user._id,
+        action: "CREATE_B2B_CATEGORY",
+        status: "SUCCESS",
+        details: { categoryId: category._id, categoryName: category.name },
+      });
+    } catch (logError) {
+      console.error("Activity log failed:", logError.message);
+      // Don't fail the main operation
+    }
+
+    res.status(201).json({
+      success: true,
+      message: "Category created successfully",
       data: { category },
     });
+  } catch (error) {
+    console.error("Create category error:", error);
+
+    // Handle duplicate key error
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Category with this name already exists. Please use a different name.",
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to create category",
+    });
+  }
+};
+
+exports.updateB2BCategory = async (req, res, next) => {
+  try {
+    const DataCategory = require("../models/DataCategory.model");
+    const { id } = req.params;
+    const {
+      name,
+      displayName,
+      description,
+      icon,
+      color,
+      requiredPlan,
+      sensitivity,
+      isActive,
+    } = req.body;
+
+    const category = await DataCategory.findById(id);
+    if (!category) return next(new AppError(404, "Category not found"));
+
+    if (name) category.name = name.toLowerCase();
+    if (displayName) category.displayName = displayName;
+    if (description !== undefined) category.description = description;
+    if (icon) category.icon = icon;
+    if (color) category.color = color;
+    if (requiredPlan) category.requiredPlan = requiredPlan;
+    if (sensitivity) category.sensitivity = sensitivity;
+    if (isActive !== undefined) category.isActive = isActive;
+
+    await category.save();
+
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "UPDATE_B2B_CATEGORY",
+      status: "SUCCESS",
+      details: { categoryId: category._id, categoryName: category.name },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Category updated successfully",
+      data: { category },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.deleteB2BCategory = async (req, res, next) => {
+  try {
+    const DataCategory = require("../models/DataCategory.model");
+    const { id } = req.params;
+
+    const category = await DataCategory.findById(id);
+    if (!category) return next(new AppError(404, "Category not found"));
+
+    await category.deleteOne();
+
+    await ActivityLog.create({
+      user: req.user._id,
+      action: "DELETE_B2B_CATEGORY",
+      status: "SUCCESS",
+      details: { categoryId: category._id, categoryName: category.name },
+    });
+
+    res
+      .status(200)
+      .json({ success: true, message: "Category deleted successfully" });
   } catch (error) {
     next(error);
   }

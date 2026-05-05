@@ -4,38 +4,28 @@ const dataCategorySchema = new mongoose.Schema(
   {
     name: {
       type: String,
-      required: true,
+      required: [true, "Category name is required"],
       unique: true,
-      enum: [
-        "demographics",
-        "voting_history",
-        "poll_participation",
-        "geographic_data",
-        "age_groups",
-        "gender_distribution",
-        "education_level",
-        "income_bracket",
-        "political_affiliation",
-        "interest_categories",
-        "device_usage",
-        "engagement_metrics",
-        "temporal_patterns",
-        "social_media_links",
-        "feedback_comments",
-        "custom_segments",
-      ],
+      trim: true,
+      lowercase: true,
     },
     displayName: {
       type: String,
-      required: true,
+      required: [true, "Display name is required"],
+      trim: true,
     },
     description: {
       type: String,
-      required: true,
+      default: "",
+      maxlength: 500,
     },
-    isActive: {
-      type: Boolean,
-      default: true,
+    icon: {
+      type: String,
+      default: "📋",
+    },
+    color: {
+      type: String,
+      default: "#ef4444",
     },
     requiredPlan: {
       type: String,
@@ -44,8 +34,16 @@ const dataCategorySchema = new mongoose.Schema(
     },
     sensitivity: {
       type: String,
-      enum: ["low", "medium", "high", "critical"],
+      enum: ["low", "medium", "high"],
       default: "low",
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    order: {
+      type: Number,
+      default: 0,
     },
   },
   {
