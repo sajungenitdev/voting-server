@@ -1,14 +1,9 @@
-node_modules
-.git
-README.md
+node_modules/
 .env
-.gitignore
-*.log
-.vscode
-.idea
-tests
 dist/
 build/
+logs/
+*.log
 .DS_Store
 coverage/
 .env.local
