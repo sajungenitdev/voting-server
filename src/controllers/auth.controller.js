@@ -510,3 +510,30 @@ exports.changePassword = async (req, res, next) => {
     next(error);
   }
 };
+
+
+exports.updateProfile = async (req, res, next) => {
+  try {
+    const { name } = req.body;
+    
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { name },
+      { new: true, runValidators: true }
+    ).select('-password -resetPasswordToken -resetPasswordExpire -refreshToken');
+    
+    if (!user) {
+      return next(new AppError(404, 'User not found'));
+    }
+    
+    await logActivity(user._id, user.email, "UPDATE_PROFILE", "SUCCESS", req);
+    
+    res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: { user }
+    });
+  } catch (error) {
+    next(error);
+  }
+};

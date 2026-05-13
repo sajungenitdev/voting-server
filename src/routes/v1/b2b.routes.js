@@ -47,11 +47,11 @@ const submitRequestValidation = [
     .withMessage("At least one category must be selected"),
   body("termsAgreed")
     .isBoolean()
-    .equals("true")
+    .custom((value) => value === true || value === "true")
     .withMessage("You must agree to Terms & Policy"),
   body("complianceAgreed")
     .isBoolean()
-    .equals("true")
+    .custom((value) => value === true || value === "true")
     .withMessage("You must agree to Data Usage Compliance"),
 ];
 
@@ -78,6 +78,9 @@ const createSubscriptionValidation = [
     ])
     .withMessage("Invalid payment method"),
   body("autoRenew").optional().isBoolean(),
+  body("cardDetails").optional().isObject(),
+  body("billingAddress").optional().isObject(),
+  body("couponCode").optional().isString(),
 ];
 
 const generateApiKeyValidation = [
@@ -186,6 +189,7 @@ router.put(
   validate([
     body("companyName").optional().notEmpty(),
     body("phoneNumber").optional().notEmpty(),
+    body("billingAddress").optional().isObject(),
   ]),
   updateProfile,
 );
@@ -311,5 +315,50 @@ router.delete(
   validate([param("id").isMongoId().withMessage("Invalid API key ID")]),
   revokeApiKey,
 );
+
+// ==================== ROOT ROUTE HANDLER (Optional) ====================
+
+/**
+ * @route   GET /api/v1/b2b
+ * @desc    B2B API root endpoint
+ * @access  Public
+ */
+router.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "B2B API v1",
+    version: "1.0.0",
+    endpoints: {
+      public: [
+        "POST /b2b/login",
+        "POST /b2b/request",
+        "POST /b2b/verify-otp",
+        "POST /b2b/resend-otp",
+        "GET /b2b/categories",
+        "GET /b2b/plans",
+      ],
+      protected: [
+        "GET /b2b/profile",
+        "PUT /b2b/profile",
+        "GET /b2b/dashboard/stats",
+        "POST /b2b/subscribe",
+        "GET /b2b/my-subscription",
+        "POST /b2b/cancel-subscription",
+        "GET /b2b/invoice/:invoiceNumber",
+        "GET /b2b/payment-history",
+        "POST /b2b/validate-access",
+        "GET /b2b/data",
+        "GET /b2b/my-requests",
+        "GET /b2b/requests/:id",
+        "POST /b2b/api-keys",
+        "GET /b2b/api-keys",
+        "DELETE /b2b/api-keys/:id",
+        "POST /b2b/confirm-payment",
+      ],
+      apiKey: ["GET /b2b/api/data"],
+    },
+    timestamp: new Date().toISOString(),
+  });
+});
 
 module.exports = router;

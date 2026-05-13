@@ -56,7 +56,7 @@ const b2bUserSchema = new mongoose.Schema(
     ],
     role: {
       type: String,
-      enum: ["buyer", "admin"],
+      enum: ["buyer", "admin", "b2b_buyer"],
       default: "buyer",
     },
     lastLogin: Date,

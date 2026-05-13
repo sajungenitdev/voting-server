@@ -14,6 +14,7 @@ const {
   resetPassword,
   getMe,
   changePassword,
+  updateProfile,
 } = require("../../controllers/auth.controller");
 
 const router = express.Router();
@@ -201,4 +202,6 @@ router.post(
   changePassword,
 );
 
+
+router.put('/update-profile', protect, updateProfile);
 module.exports = router;

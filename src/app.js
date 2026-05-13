@@ -1,43 +1,72 @@
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const compression = require('compression');
-const cookieParser = require('cookie-parser');
-const hpp = require('hpp');
-const xss = require('xss');
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const morgan = require("morgan");
+const compression = require("compression");
+const cookieParser = require("cookie-parser");
+const hpp = require("hpp");
+const xss = require("xss");
 
-const routes = require('./routes/v1/index');
-const errorHandler = require('./middleware/error.middleware');
-const { apiLimiter } = require('./middleware/rateLimit.middleware');
-const AppError = require('./utils/AppError');
+const routes = require("./routes/v1/index");
+const errorHandler = require("./middleware/error.middleware");
+const { apiLimiter } = require("./middleware/rateLimit.middleware");
+const AppError = require("./utils/AppError");
 
 const app = express();
 
-// Custom NoSQL Injection Prevention (replaces mongoSanitize)
+// Custom NoSQL Injection Prevention
 const preventNoSQLInjection = (req, res, next) => {
-  const dangerousKeys = ['$', '^', '(', ')', '[', ']', '{', '}', '|', '&', '*', '?', '+', '-', '=', '~', '`', '!', '@', '#', '%', ';', ':', '"', "'", '<', '>', ',', '.'];
-  
+  const dangerousKeys = [
+    "$",
+    "^",
+    "(",
+    ")",
+    "[",
+    "]",
+    "{",
+    "}",
+    "|",
+    "&",
+    "*",
+    "?",
+    "+",
+    "-",
+    "=",
+    "~",
+    "`",
+    "!",
+    "@",
+    "#",
+    "%",
+    ";",
+    ":",
+    '"',
+    "'",
+    "<",
+    ">",
+    ",",
+    ".",
+  ];
+
   const sanitize = (obj) => {
     if (!obj) return obj;
     for (let key in obj) {
-      if (typeof obj[key] === 'string') {
-        // Remove dangerous MongoDB operators
+      if (typeof obj[key] === "string") {
         for (let dKey of dangerousKeys) {
           if (obj[key].includes(dKey)) {
-            obj[key] = obj[key].replace(new RegExp('\\' + dKey, 'g'), '');
+            obj[key] = obj[key].replace(new RegExp("\\" + dKey, "g"), "");
           }
         }
-      } else if (typeof obj[key] === 'object') {
+      } else if (typeof obj[key] === "object") {
         sanitize(obj[key]);
       }
     }
   };
-  
+
   if (req.body) sanitize(req.body);
   if (req.query) sanitize(req.query);
   if (req.params) sanitize(req.params);
-  
+
   next();
 };
 
@@ -46,9 +75,9 @@ const xssProtection = (req, res, next) => {
   if (req.body) {
     const sanitizeObject = (obj) => {
       for (let key in obj) {
-        if (typeof obj[key] === 'string') {
+        if (typeof obj[key] === "string") {
           obj[key] = xss(obj[key]);
-        } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+        } else if (typeof obj[key] === "object" && obj[key] !== null) {
           sanitizeObject(obj[key]);
         }
       }
@@ -59,56 +88,122 @@ const xssProtection = (req, res, next) => {
 };
 
 // Security middleware
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      imgSrc: ["'self'", "data:", "https:"],
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+        imgSrc: ["'self'", "data:", "https:"],
+      },
     },
-  },
-}));
+  }),
+);
 
 app.use(xssProtection);
 app.use(preventNoSQLInjection);
 
-app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
-}));
+// ✅ FIXED CORS CONFIGURATION - Remove the problematic app.options line
+const allowedOrigins = [
+  "http://localhost:3000", // Main frontend
+  "http://localhost:3001", // Admin dashboard
+  "http://localhost:3002", // Alternative port
+  "http://localhost:5173", // Vite default
+  "http://127.0.0.1:3000",
+  "http://127.0.0.1:3001",
+  process.env.FRONTEND_URL,
+  process.env.ADMIN_URL,
+].filter(Boolean);
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Simple CORS setup - works without wildcard issues
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      // For development - allow all origins
+      if (process.env.NODE_ENV !== "production") {
+        return callback(null, true);
+      }
+
+      // For production - check against allowed origins
+      if (allowedOrigins.indexOf(origin) !== -1) {
+        callback(null, true);
+      } else {
+        console.warn(`⚠️ Blocked CORS request from origin: ${origin}`);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
+    exposedHeaders: ["Authorization"],
+  }),
+);
+
+// ❌ REMOVE THIS LINE - It's causing the error
+// app.options('*', cors());
+
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
 app.use(hpp());
 app.use(compression());
 
 // Logging
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
+if (process.env.NODE_ENV === "development") {
+  app.use(morgan("dev"));
 } else {
-  app.use(morgan('combined'));
+  app.use(morgan("combined"));
 }
 
-app.use('/api', apiLimiter);
-
-// Health check
-app.get('/health', (req, res) => {
+// Root route handler
+app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
-    status: 'healthy',
+    message: "Voting Platform API",
+    version: "1.0.0",
+    status: "active",
+    endpoints: {
+      auth: "/api/v1/auth",
+      polls: "/api/v1/polls",
+      votes: "/api/v1/votes",
+      b2b: "/api/v1/b2b",
+      categories: "/api/v1/categories",
+      comments: "/api/v1/comments",
+      admin: "/api/v1/admin",
+    },
+    health: "/health",
+    documentation: "/api/v1",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.use("/api", apiLimiter);
+
+// Health check
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    success: true,
+    status: "healthy",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || "development",
   });
 });
 
 // API routes
-app.use('/api/v1', routes);
+app.use("/api/v1", routes);
 
-// 404 handler
+// 404 handler - This will now only run for routes that don't exist
 app.use((req, res, next) => {
   next(new AppError(404, `Cannot find ${req.originalUrl} on this server`));
 });

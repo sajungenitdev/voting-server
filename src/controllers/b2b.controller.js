@@ -115,6 +115,8 @@ const convertToCSVFull = (data, categories) => {
 // ==================== PUBLIC ROUTES ====================
 
 // B2B User Login
+// backend/src/controllers/b2b.controller.js - Update b2bLogin
+
 exports.b2bLogin = async (req, res, next) => {
   try {
     const { email, password } = req.body;
@@ -146,18 +148,27 @@ exports.b2bLogin = async (req, res, next) => {
 
     const accessToken = generateAccessToken(user._id);
 
+    // ✅ Return complete user data
+    const userData = {
+      _id: user._id,
+      id: user._id,
+      name: user.fullName || user.companyName,
+      fullName: user.fullName,
+      companyName: user.companyName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      role: user.role || "b2b_buyer",
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+      lastLogin: user.lastLogin,
+    };
+
     res.status(200).json({
       success: true,
       message: "Logged in successfully",
       data: {
-        user: {
-          id: user._id,
-          name: user.fullName,
-          email: user.email,
-          companyName: user.companyName,
-          role: "b2b_buyer",
-        },
-        accessToken,
+        user: userData, // ✅ Return user object
+        accessToken: accessToken,
       },
     });
   } catch (error) {
@@ -228,6 +239,10 @@ exports.submitRequest = async (req, res, next) => {
 };
 
 // Verify OTP and complete account creation
+// backend/src/controllers/b2b.controller.js - Update verifyOTP
+
+// backend/src/controllers/b2b.controller.js - Update verifyOTP
+
 exports.verifyOTP = async (req, res, next) => {
   try {
     const { email, otp, requestId } = req.body;
@@ -257,6 +272,7 @@ exports.verifyOTP = async (req, res, next) => {
         password: tempPassword,
         isVerified: true,
         isActive: true,
+        role: "b2b_buyer", // ✅ Add this
       });
 
       request.user = user._id;
@@ -264,6 +280,7 @@ exports.verifyOTP = async (req, res, next) => {
       await sendWelcomeCredentialsEmail(email, tempPassword, request.fullName);
     } else {
       user.isVerified = true;
+      user.role = "b2b_buyer"; // ✅ Add this
       await user.save();
     }
 
@@ -274,16 +291,31 @@ exports.verifyOTP = async (req, res, next) => {
 
     const accessToken = generateAccessToken(user._id);
 
+    // ✅ Return complete user data
+    const userData = {
+      _id: user._id,
+      id: user._id,
+      name: user.fullName || user.companyName,
+      fullName: user.fullName,
+      companyName: user.companyName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      role: user.role || "b2b_buyer",
+      isVerified: user.isVerified,
+      createdAt: user.createdAt,
+      lastLogin: user.lastLogin,
+    };
+
     res.status(200).json({
       success: true,
       message: isNewlyCreated
         ? "Email verified successfully! Account credentials sent to your email."
         : "Request verified successfully!",
       data: {
-        email: email,
+        user: userData, // ✅ Add user object
+        accessToken: accessToken,
         isNewUser: isNewlyCreated,
         canLogin: true,
-        accessToken: accessToken,
         redirectUrl: "/b2b/dashboard",
       },
     });
@@ -292,7 +324,6 @@ exports.verifyOTP = async (req, res, next) => {
     next(error);
   }
 };
-
 // Resend OTP
 exports.resendOTP = async (req, res, next) => {
   try {
@@ -811,237 +842,150 @@ exports.getRequestById = async (req, res, next) => {
   }
 };
 
-// Get user data based on purchased subscription categories with user details
+// backend/src/controllers/b2b.controller.js
+
 exports.getUserData = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const {
-      page = 1,
-      limit = 1000,
-      format = "json",
-      includeUsers = "true",
-    } = req.query;
+    const { format = 'json', page = 1, limit = 100 } = req.query;
 
-    const user = await B2BUser.findById(userId).populate("subscription");
-    if (
-      !user.subscription ||
-      user.subscription.endDate < new Date() ||
-      user.subscription.paymentStatus !== "completed"
-    ) {
-      return next(
-        new AppError(
-          403,
-          "Active subscription required to access data. Please purchase a plan.",
-        ),
-      );
+    console.log('📊 Fetching data for user:', userId);
+
+    // Get user with subscription
+    const user = await B2BUser.findById(userId).populate('subscription');
+    
+    if (!user) {
+      return next(new AppError(404, 'User not found'));
     }
 
-    const subscription = user.subscription;
+    if (!user.subscription) {
+      return next(new AppError(403, 'No active subscription found. Please purchase a plan.'));
+    }
+
+    if (user.subscription.endDate < new Date()) {
+      return next(new AppError(403, 'Subscription has expired. Please renew.'));
+    }
+
+    // Get approved request
     const approvedRequest = await B2BRequest.findOne({
       user: userId,
-      status: "approved",
-      otpVerified: true,
+      status: 'approved',
+      otpVerified: true
     }).sort({ createdAt: -1 });
 
     if (!approvedRequest) {
-      return next(
-        new AppError(
-          404,
-          "No approved data access request found. Please submit a request first.",
-        ),
-      );
+      return next(new AppError(404, 'No approved data access request found.'));
     }
 
     const purchasedCategories = approvedRequest.selectedCategories || [];
+    
     if (purchasedCategories.length === 0) {
-      return next(
-        new AppError(
-          400,
-          "No data categories have been approved for your account.",
-        ),
-      );
+      return next(new AppError(400, 'No data categories purchased.'));
     }
 
-    const UserModel = require("../models/User.model");
-    const Vote = require("../models/Vote.model");
-    const Poll = require("../models/Poll.model");
+    console.log('📊 Purchased categories:', purchasedCategories);
 
-    let userData = {};
-    const includeUsersList = includeUsers === "true";
+    // Import models
+    const UserModel = require('../models/User.model');
+    const Vote = require('../models/Vote.model');
+    const Poll = require('../models/Poll.model');
+
+    const responseData = {};
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
+    // For each purchased category, fetch the relevant data
     for (const category of purchasedCategories) {
-      switch (category) {
-        case "demographics":
-          const allUsers = await UserModel.find({})
-            .select(
-              "name email phoneNumber location age gender createdAt isVerified lastLogin",
-            )
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limitNum);
-
-          const totalUsers = await UserModel.countDocuments();
-          const verifiedUsers = await UserModel.countDocuments({
-            isVerified: true,
-          });
-          const unverifiedUsers = await UserModel.countDocuments({
-            isVerified: false,
-          });
-
-          userData.demographics = {
-            summary: { totalUsers, verifiedUsers, unverifiedUsers },
-            users: allUsers.map((u) => ({
-              id: u._id,
-              name: u.name,
-              email: u.email,
-              phoneNumber: u.phoneNumber || "N/A",
-              location: u.location || "N/A",
-              age: u.age || "N/A",
-              gender: u.gender || "N/A",
-              registeredAt: u.createdAt,
-              isVerified: u.isVerified,
-              lastLogin: u.lastLogin || "Never",
-            })),
-          };
-          break;
-
-        case "voting_history":
-          const votes = await Vote.aggregate([
-            {
-              $group: {
-                _id: "$user",
-                totalVotes: { $sum: 1 },
-                lastVoteDate: { $max: "$createdAt" },
-                firstVoteDate: { $min: "$createdAt" },
-                pollIds: { $addToSet: "$poll" },
-              },
-            },
-            { $sort: { totalVotes: -1 } },
-            { $skip: skip },
-            { $limit: limitNum },
-          ]);
-
-          const userIds = votes.map((v) => v._id);
-          const usersMap = {};
-          const userDetails = await UserModel.find({
-            _id: { $in: userIds },
-          }).select("name email location age gender");
-          userDetails.forEach((u) => {
-            usersMap[u._id.toString()] = u;
-          });
-
-          userData.votingHistory = votes.map((vote) => ({
-            user: {
-              id: vote._id,
-              name: usersMap[vote._id.toString()]?.name || "Unknown",
-              email: usersMap[vote._id.toString()]?.email || "Unknown",
-              location: usersMap[vote._id.toString()]?.location || "N/A",
-              age: usersMap[vote._id.toString()]?.age || "N/A",
-              gender: usersMap[vote._id.toString()]?.gender || "N/A",
-            },
-            totalVotes: vote.totalVotes,
-            lastVoteDate: vote.lastVoteDate,
-            firstVoteDate: vote.firstVoteDate,
-            uniquePollsVoted: vote.pollIds.length,
-          }));
-          break;
-
-        case "poll_participation":
-          userData.pollParticipation = await Poll.aggregate([
-            {
-              $group: {
-                _id: "$category",
-                totalPolls: { $sum: 1 },
-                totalVotes: { $sum: "$totalVotes" },
-                averageParticipation: { $avg: "$totalVotes" },
-              },
-            },
-          ]);
-          break;
-
-        case "geographic_data":
-          userData.geographicData = await UserModel.aggregate([
-            { $match: { location: { $exists: true, $ne: null } } },
-            {
-              $group: {
-                _id: "$location",
-                count: { $sum: 1 },
-                users: includeUsersList
-                  ? {
-                      $push: {
-                        name: "$name",
-                        email: "$email",
-                        age: "$age",
-                        gender: "$gender",
-                      },
-                    }
-                  : undefined,
-              },
-            },
-            { $sort: { count: -1 } },
-            { $limit: limitNum },
-          ]);
-          break;
-      }
+      console.log(`📊 Fetching data for category: ${category}`);
+      
+      // Handle different category types
+      // You can fetch data based on the category name
+      // For example, if they purchased "gaming", fetch data for gaming polls and users who voted in gaming polls
+      
+      // Fetch users who voted in polls of this category
+      // First, find all polls in this category
+      const categoryPolls = await Poll.find({ 
+        category: category,
+        isPublished: true 
+      }).select('_id title');
+      
+      const pollIds = categoryPolls.map(p => p._id);
+      
+      // Find votes in these polls
+      const categoryVotes = await Vote.find({
+        poll: { $in: pollIds }
+      }).populate('user', 'name email location age gender phoneNumber');
+      
+      // Get unique users who voted in this category
+      const uniqueUserIds = [...new Set(categoryVotes.map(v => v.user?._id?.toString()))];
+      
+      // Get full user details
+      const usersWithDetails = await UserModel.find({
+        _id: { $in: uniqueUserIds }
+      }).select('name email phoneNumber location age gender createdAt isVerified lastLogin');
+      
+      // Prepare category data
+      responseData[category] = {
+        categoryName: category,
+        totalPolls: categoryPolls.length,
+        totalVotes: categoryVotes.length,
+        uniqueVoters: uniqueUserIds.length,
+        polls: categoryPolls.map(p => ({
+          id: p._id,
+          title: p.title,
+        })),
+        users: usersWithDetails.map(u => ({
+          id: u._id,
+          name: u.name,
+          email: u.email,
+          phoneNumber: u.phoneNumber || 'N/A',
+          location: u.location || 'N/A',
+          age: u.age || 'N/A',
+          gender: u.gender || 'N/A',
+          registeredAt: u.createdAt,
+          isVerified: u.isVerified,
+          lastLogin: u.lastLogin || 'Never',
+        })),
+        votes: categoryVotes.slice(0, limitNum).map(v => ({
+          userId: v.user?._id,
+          userName: v.user?.name,
+          userEmail: v.user?.email,
+          pollTitle: v.poll?.title,
+          votedAt: v.createdAt,
+        })),
+      };
+      
+      console.log(`✅ Found ${categoryPolls.length} polls and ${uniqueUserIds.length} unique users for category: ${category}`);
     }
 
-    await B2BRequest.findOneAndUpdate(
-      { user: userId, status: "approved" },
-      {
-        $push: {
-          auditLog: {
-            action: "DATA_ACCESS",
-            timestamp: new Date(),
-            ipAddress: getClientIP(req),
-            userAgent: req.headers["user-agent"],
-            categoriesAccessed: purchasedCategories,
-            format,
-          },
-        },
-      },
-    );
-
-    const responseData = {
-      success: true,
-      data: userData,
-      purchaseInfo: {
-        subscriptionTier: subscription.tier,
-        purchasedCategories,
-        maxCategoriesAllowed: subscription.maxCategories,
-        remainingCategories:
-          subscription.maxCategories - purchasedCategories.length,
-        subscriptionValidUntil: subscription.endDate,
-        remainingDays: Math.ceil(
-          (subscription.endDate - new Date()) / (1000 * 60 * 60 * 24),
-        ),
-      },
-      meta: {
-        totalCategoriesPurchased: purchasedCategories.length,
-        dataRetrieved: Object.keys(userData).length,
-        page: pageNum,
-        limit: limitNum,
-        includeUsers: includeUsersList,
-        timestamp: new Date().toISOString(),
-        requestId: approvedRequest._id,
-      },
+    // Prepare purchase info
+    const purchaseInfo = {
+      subscriptionTier: user.subscription.tier,
+      purchasedCategories: purchasedCategories,
+      maxCategoriesAllowed: user.subscription.maxCategories === 999 ? 'Unlimited' : user.subscription.maxCategories,
+      remainingCategories: user.subscription.maxCategories === 999 
+        ? 'Unlimited' 
+        : Math.max(0, user.subscription.maxCategories - purchasedCategories.length),
+      subscriptionValidUntil: user.subscription.endDate,
+      remainingDays: Math.ceil((user.subscription.endDate - new Date()) / (1000 * 60 * 60 * 24)),
     };
 
-    if (format === "csv") {
-      const csv = convertToCSVFull(userData, purchasedCategories);
-      res.setHeader("Content-Type", "text/csv");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename=voting_data_${Date.now()}.csv`,
-      );
-      return res.status(200).send(csv);
-    }
+    console.log('✅ Final response data keys:', Object.keys(responseData));
 
-    res.status(200).json(responseData);
+    res.status(200).json({
+      success: true,
+      data: responseData,
+      purchaseInfo: purchaseInfo,
+      meta: {
+        totalCategories: purchasedCategories.length,
+        dataRetrieved: Object.keys(responseData).length,
+        timestamp: new Date().toISOString(),
+      },
+    });
+
   } catch (error) {
-    console.error("Get user data error:", error);
+    console.error('Error in getUserData:', error);
     next(error);
   }
 };
