@@ -104,7 +104,7 @@ app.use(
 app.use(xssProtection);
 app.use(preventNoSQLInjection);
 
-// ✅ FIXED CORS CONFIGURATION - Remove the problematic app.options line
+// ✅ FIXED CORS CONFIGURATION 
 const allowedOrigins = [
   "http://localhost:3000", // Main frontend
   "http://localhost:3001", // Admin dashboard
