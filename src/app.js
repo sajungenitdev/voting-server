@@ -104,7 +104,7 @@ app.use(
 app.use(xssProtection);
 app.use(preventNoSQLInjection);
 
-// ✅ FIXED CORS CONFIGURATION 
+// ✅ FIXED CORS CONFIGURATION
 const allowedOrigins = [
   "http://localhost:3000", // Main frontend
   "http://localhost:3001", // Admin dashboard
@@ -113,7 +113,7 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
   "http://127.0.0.1:3001",
   "https://voting-admin-dashboard-ecru.vercel.app",
-  "https://voting-frontend-two-nu.vercel.app/",
+  "https://voting-frontend-two-nu.vercel.app",
   process.env.FRONTEND_URL,
   process.env.ADMIN_URL,
 ].filter(Boolean);
@@ -151,8 +151,6 @@ app.use(
   }),
 );
 
-// ❌ REMOVE THIS LINE - It's causing the error
-// app.options('*', cors());
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
@@ -166,6 +164,11 @@ if (process.env.NODE_ENV === "development") {
 } else {
   app.use(morgan("combined"));
 }
+
+// Add this before your 404 handler
+app.get("/favicon.ico", (req, res) => {
+  res.status(204).end(); // No content
+});
 
 // Root route handler
 app.get("/", (req, res) => {

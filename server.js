@@ -72,7 +72,8 @@ connectDB()
     // Initialize B2B data categories
     await seedDataCategories();
 
-    server.listen(PORT, () => {
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
       console.log(`
     ════════════════════════════════════════
     🚀 Server is running!
