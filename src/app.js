@@ -117,7 +117,7 @@ const allowedOrigins = [
   "http://127.0.0.1:3000",
   "https://voting-admin-dashboard-ecru.vercel.app",
   "https://voting-frontend-two-nu.vercel.app",
-  "https://plus-vote.onrender.com",
+  "https://voting-server-ihh7.onrender.com",
   process.env.FRONTEND_URL,
   process.env.ADMIN_URL,
 ].filter(Boolean);

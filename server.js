@@ -153,8 +153,8 @@ connectDB()
     ═══════════════════════════════════════════════════
     📡 Port: ${PORT}
     🌍 Environment: ${process.env.NODE_ENV || "development"}
-    🔗 API URL: https://plus-vote.onrender.com
-    💚 Health: https://plus-vote.onrender.com/health
+    🔗 API URL: https://voting-server-ihh7.onrender.com
+    💚 Health: https://voting-server-ihh7.onrender.com/health
     📡 WebSocket: wss://plus-vote.onrender.com
     🗄️  MongoDB: Connected
     ═══════════════════════════════════════════════════
