@@ -108,7 +108,16 @@ const refreshTokenValidation = [
     .withMessage("Refresh token is required"),
 ];
 
-// ==================== PUBLIC ROUTES (No Authentication Required) ====================
+// ==================== TEST ROUTE ====================
+router.get("/test", (req, res) => {
+  res.json({
+    success: true,
+    message: "Auth routes are working!",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ==================== PUBLIC ROUTES ====================
 
 /**
  * @route   POST /api/v1/auth/register
@@ -144,6 +153,13 @@ router.post(
 router.post("/login", authLimiter, validate(loginValidation), login);
 
 /**
+ * @route   POST /api/v1/auth/refresh-token
+ * @desc    Refresh access token
+ * @access  Public
+ */
+router.post("/refresh-token", refreshToken);
+
+/**
  * @route   POST /api/v1/auth/forgot-password
  * @desc    Send password reset email
  * @access  Public
@@ -167,14 +183,7 @@ router.post(
   resetPassword,
 );
 
-/**
- * @route   POST /api/v1/auth/refresh-token
- * @desc    Refresh access token
- * @access  Public (uses refresh token from cookie)
- */
-router.post("/refresh-token", refreshToken);
-
-// ==================== PROTECTED ROUTES (Authentication Required) ====================
+// ==================== PROTECTED ROUTES ====================
 
 /**
  * @route   POST /api/v1/auth/logout
@@ -202,6 +211,11 @@ router.post(
   changePassword,
 );
 
+/**
+ * @route   PUT /api/v1/auth/update-profile
+ * @desc    Update user profile
+ * @access  Private
+ */
+router.put("/update-profile", protect, updateProfile);
 
-router.put('/update-profile', protect, updateProfile);
 module.exports = router;
