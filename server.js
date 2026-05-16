@@ -1,4 +1,5 @@
 const http = require("http");
+const path = require("path");
 const dotenv = require("dotenv");
 const { Server } = require("socket.io");
 const app = require("./src/app");
@@ -11,6 +12,7 @@ const seedDataCategories = require("./src/utils/seedB2BCategories");
 // Load environment variables
 dotenv.config();
 
+// Use Render's PORT or fallback to 5000
 const PORT = process.env.PORT || 5000;
 const server = http.createServer(app);
 
@@ -63,7 +65,7 @@ io.on("connection", (socket) => {
   });
 });
 
-// Connect to database and start server - SINGLE CONNECTION
+// Connect to database and start server
 connectDB()
   .then(async () => {
     // Initialize default categories (for polls)
@@ -73,10 +75,9 @@ connectDB()
     await seedDataCategories();
 
     server.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on port ${PORT}`);
       console.log(`
     ════════════════════════════════════════
-    🚀 Server is running!
+    🚀 Server is running successfully!
     ════════════════════════════════════════
     📡 Port: ${PORT}
     🌍 Environment: ${process.env.NODE_ENV || "development"}

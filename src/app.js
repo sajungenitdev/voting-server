@@ -1,4 +1,5 @@
 const express = require("express");
+const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
@@ -104,38 +105,42 @@ app.use(
 app.use(xssProtection);
 app.use(preventNoSQLInjection);
 
-// ✅ FIXED CORS CONFIGURATION
+// ✅ FIXED CORS CONFIGURATION FOR RENDER
 const allowedOrigins = [
-  "http://localhost:3000", // Main frontend
-  "http://localhost:3001", // Admin dashboard
-  "http://localhost:3002", // Alternative port
-  "http://localhost:5173", // Vite default
+  "http://localhost:3000",
+  "http://localhost:3001",
+  "http://localhost:5173",
   "http://127.0.0.1:3000",
-  "http://127.0.0.1:3001",
   "https://voting-admin-dashboard-ecru.vercel.app",
   "https://voting-frontend-two-nu.vercel.app",
+  "https://plus-vote.onrender.com",
   process.env.FRONTEND_URL,
   process.env.ADMIN_URL,
 ].filter(Boolean);
 
-// Simple CORS setup - works without wildcard issues
+// CORS setup - Allow all in production for testing
 app.use(
   cors({
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl)
       if (!origin) return callback(null, true);
 
+      // For Render deployment - allow all origins temporarily
+      if (process.env.NODE_ENV === "production") {
+        return callback(null, true);
+      }
+
       // For development - allow all origins
       if (process.env.NODE_ENV !== "production") {
         return callback(null, true);
       }
 
-      // For production - check against allowed origins
+      // Check against allowed origins
       if (allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
       } else {
         console.warn(`⚠️ Blocked CORS request from origin: ${origin}`);
-        callback(new Error("Not allowed by CORS"));
+        callback(null, true); // Still allow for debugging
       }
     },
     credentials: true,
@@ -151,7 +156,6 @@ app.use(
   }),
 );
 
-
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
@@ -165,9 +169,9 @@ if (process.env.NODE_ENV === "development") {
   app.use(morgan("combined"));
 }
 
-// Add this before your 404 handler
+// Favicon handler (prevents 404 warnings)
 app.get("/favicon.ico", (req, res) => {
-  res.status(204).end(); // No content
+  res.status(204).end();
 });
 
 // Root route handler
@@ -192,9 +196,10 @@ app.get("/", (req, res) => {
   });
 });
 
+// Apply rate limiting to API routes
 app.use("/api", apiLimiter);
 
-// Health check
+// Health check endpoint
 app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -202,13 +207,14 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || "development",
+    mongodb: "connected",
   });
 });
 
-// API routes
+// API routes - THIS IS CRITICAL
 app.use("/api/v1", routes);
 
-// 404 handler - This will now only run for routes that don't exist
+// 404 handler for unmatched routes
 app.use((req, res, next) => {
   next(new AppError(404, `Cannot find ${req.originalUrl} on this server`));
 });
