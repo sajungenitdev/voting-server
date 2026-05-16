@@ -2,6 +2,7 @@ const http = require("http");
 const path = require("path");
 const dotenv = require("dotenv");
 const { Server } = require("socket.io");
+const mongoose = require("mongoose");
 
 // Load environment variables FIRST
 dotenv.config();
@@ -32,7 +33,6 @@ console.log("✅ Environment variables validated");
 process.on("uncaughtException", (error) => {
   console.error("❌ Uncaught Exception:", error);
   console.error("Stack:", error.stack);
-  // Don't exit immediately - let the server try to recover
   setTimeout(() => process.exit(1), 5000);
 });
 
@@ -135,7 +135,6 @@ connectDB()
       console.log("✅ Default categories initialized");
     } catch (err) {
       console.error("⚠️ Category initialization failed:", err.message);
-      // Don't exit - continue anyway
     }
 
     try {
@@ -145,37 +144,40 @@ connectDB()
       console.error("⚠️ B2B seeding failed:", err.message);
     }
 
-    // Start server
+    // ONLY ONE server.listen() call - remove any other listen() calls in this file!
     server.listen(PORT, "0.0.0.0", () => {
+      const serverUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
       console.log(`
     ═══════════════════════════════════════════════════
     🚀 SERVER IS RUNNING SUCCESSFULLY!
     ═══════════════════════════════════════════════════
     📡 Port: ${PORT}
     🌍 Environment: ${process.env.NODE_ENV || "development"}
-    🔗 API URL: https://voting-server-ihh7.onrender.com
-    💚 Health: https://voting-server-ihh7.onrender.com/health
-    📡 WebSocket: wss://plus-vote.onrender.com
+    🔗 API URL: ${serverUrl}
+    💚 Health: ${serverUrl}/health
     🗄️  MongoDB: Connected
     ═══════════════════════════════════════════════════
     `);
     });
   })
   .catch((err) => {
-    console.error("❌ Failed to connect to database:", err.message);
-    console.error("Please check your MONGODB_URI environment variable");
+    console.error("❌ Failed to start server:", err.message);
     process.exit(1);
   });
 
-// Graceful shutdown
+// ==================== GRACEFUL SHUTDOWN ====================
 const gracefulShutdown = () => {
   console.log("🛑 Received shutdown signal, closing gracefully...");
   server.close(() => {
     console.log("✅ HTTP server closed");
-    mongoose.connection.close(false, () => {
-      console.log("✅ MongoDB connection closed");
+    if (mongoose.connection) {
+      mongoose.connection.close(false, () => {
+        console.log("✅ MongoDB connection closed");
+        process.exit(0);
+      });
+    } else {
       process.exit(0);
-    });
+    }
   });
 
   // Force shutdown after 10 seconds
@@ -187,5 +189,3 @@ const gracefulShutdown = () => {
 
 process.on("SIGTERM", gracefulShutdown);
 process.on("SIGINT", gracefulShutdown);
-
-module.exports = { server, io };
