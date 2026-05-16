@@ -184,7 +184,7 @@ const gracefulShutdown = () => {
   setTimeout(() => {
     console.error("⚠️ Force shutdown after timeout");
     process.exit(1);
-  }, 10000);
+  }, 5000);
 };
 
 process.on("SIGTERM", gracefulShutdown);

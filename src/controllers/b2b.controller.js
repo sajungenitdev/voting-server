@@ -179,6 +179,10 @@ exports.b2bLogin = async (req, res, next) => {
 // Submit data access request
 exports.submitRequest = async (req, res, next) => {
   try {
+    console.log("=".repeat(50));
+    console.log("📥 B2B SUBMIT REQUEST");
+    console.log("Request body:", JSON.stringify(req.body, null, 2));
+
     const {
       fullName,
       email,
@@ -189,34 +193,92 @@ exports.submitRequest = async (req, res, next) => {
       complianceAgreed,
     } = req.body;
 
-    if (!termsAgreed || !complianceAgreed) {
-      return next(
-        new AppError(
-          400,
-          "You must agree to Terms & Policy and Data Usage Compliance",
-        ),
-      );
+    // Validate required fields
+    const missingFields = [];
+    if (!fullName) missingFields.push("fullName");
+    if (!email) missingFields.push("email");
+    if (!phoneNumber) missingFields.push("phoneNumber");
+    if (!purpose) missingFields.push("purpose");
+    if (
+      !selectedCategories ||
+      !Array.isArray(selectedCategories) ||
+      selectedCategories.length === 0
+    ) {
+      missingFields.push("selectedCategories (must be a non-empty array)");
     }
 
-    const existingUser = await B2BUser.findOne({ email });
+    if (missingFields.length > 0) {
+      console.log("❌ Missing required fields:", missingFields);
+      return res.status(400).json({
+        success: false,
+        message: `Missing required fields: ${missingFields.join(", ")}`,
+      });
+    }
+
+    // Validate purpose length
+    if (purpose.length > 1000) {
+      console.log("❌ Purpose exceeds 1000 characters:", purpose.length);
+      return res.status(400).json({
+        success: false,
+        message: "Purpose must be less than 1000 characters",
+      });
+    }
+
+    if (!termsAgreed || !complianceAgreed) {
+      return res.status(400).json({
+        success: false,
+        message: "You must agree to Terms & Policy and Data Usage Compliance",
+      });
+    }
+
+    // Check if user exists
+    let existingUser = null;
+    try {
+      existingUser = await B2BUser.findOne({ email });
+      console.log("Existing user found:", !!existingUser);
+    } catch (userError) {
+      console.error("Error finding user:", userError.message);
+    }
+
     const otp = generateOTP();
     const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-    const request = await B2BRequest.create({
-      user: existingUser?._id || null,
-      fullName,
-      email,
-      phoneNumber,
-      purpose,
-      selectedCategories,
-      termsAgreed,
-      complianceAgreed,
+    console.log(`📝 Creating request for ${email}`);
+    console.log(`Selected categories: ${selectedCategories.join(", ")}`);
+
+    // Create request with clean data
+    const requestData = {
+      fullName: fullName.trim(),
+      email: email.toLowerCase().trim(),
+      phoneNumber: phoneNumber.trim(),
+      purpose: purpose.trim().substring(0, 1000), // Truncate if too long
+      selectedCategories: selectedCategories.filter((cat) => cat && cat.trim()),
+      termsAgreed: Boolean(termsAgreed),
+      complianceAgreed: Boolean(complianceAgreed),
       otp,
       otpExpiresAt,
       status: "pending",
-    });
+      otpVerified: false,
+    };
 
-    await sendOTPEmail(email, otp, fullName);
+    // Add user reference if exists
+    if (existingUser) {
+      requestData.user = existingUser._id;
+    }
+
+    console.log("Request data prepared, saving to database...");
+
+    const request = await B2BRequest.create(requestData);
+    console.log(`✅ Request created successfully with ID: ${request._id}`);
+
+    // Try to send email (but don't fail if it doesn't work)
+    try {
+      await sendOTPEmail(email, otp, fullName);
+      console.log(`📧 OTP email sent to ${email}`);
+    } catch (emailError) {
+      console.error(`⚠️ Failed to send OTP email: ${emailError.message}`);
+      // Don't return error - continue anyway
+    }
 
     res.status(201).json({
       success: true,
@@ -233,16 +295,28 @@ exports.submitRequest = async (req, res, next) => {
       },
     });
   } catch (error) {
-    console.error("Submit request error:", error);
+    console.error("❌ Submit request error:", error);
+    console.error("Error name:", error.name);
+    console.error("Error message:", error.message);
+
+    // Handle validation errors
+    if (error.name === "ValidationError") {
+      const validationErrors = Object.values(error.errors).map(
+        (err) => err.message,
+      );
+      console.error("Validation errors:", validationErrors);
+      return res.status(400).json({
+        success: false,
+        message: "Validation failed",
+        errors: validationErrors,
+      });
+    }
+
     next(error);
   }
 };
 
-// Verify OTP and complete account creation
 // backend/src/controllers/b2b.controller.js - Update verifyOTP
-
-// backend/src/controllers/b2b.controller.js - Update verifyOTP
-
 exports.verifyOTP = async (req, res, next) => {
   try {
     const { email, otp, requestId } = req.body;
@@ -847,48 +921,53 @@ exports.getRequestById = async (req, res, next) => {
 exports.getUserData = async (req, res, next) => {
   try {
     const userId = req.user._id;
-    const { format = 'json', page = 1, limit = 100 } = req.query;
+    const { format = "json", page = 1, limit = 100 } = req.query;
 
-    console.log('📊 Fetching data for user:', userId);
+    console.log("📊 Fetching data for user:", userId);
 
     // Get user with subscription
-    const user = await B2BUser.findById(userId).populate('subscription');
-    
+    const user = await B2BUser.findById(userId).populate("subscription");
+
     if (!user) {
-      return next(new AppError(404, 'User not found'));
+      return next(new AppError(404, "User not found"));
     }
 
     if (!user.subscription) {
-      return next(new AppError(403, 'No active subscription found. Please purchase a plan.'));
+      return next(
+        new AppError(
+          403,
+          "No active subscription found. Please purchase a plan.",
+        ),
+      );
     }
 
     if (user.subscription.endDate < new Date()) {
-      return next(new AppError(403, 'Subscription has expired. Please renew.'));
+      return next(new AppError(403, "Subscription has expired. Please renew."));
     }
 
     // Get approved request
     const approvedRequest = await B2BRequest.findOne({
       user: userId,
-      status: 'approved',
-      otpVerified: true
+      status: "approved",
+      otpVerified: true,
     }).sort({ createdAt: -1 });
 
     if (!approvedRequest) {
-      return next(new AppError(404, 'No approved data access request found.'));
+      return next(new AppError(404, "No approved data access request found."));
     }
 
     const purchasedCategories = approvedRequest.selectedCategories || [];
-    
+
     if (purchasedCategories.length === 0) {
-      return next(new AppError(400, 'No data categories purchased.'));
+      return next(new AppError(400, "No data categories purchased."));
     }
 
-    console.log('📊 Purchased categories:', purchasedCategories);
+    console.log("📊 Purchased categories:", purchasedCategories);
 
     // Import models
-    const UserModel = require('../models/User.model');
-    const Vote = require('../models/Vote.model');
-    const Poll = require('../models/Poll.model');
+    const UserModel = require("../models/User.model");
+    const Vote = require("../models/Vote.model");
+    const Poll = require("../models/Poll.model");
 
     const responseData = {};
     const pageNum = parseInt(page);
@@ -898,56 +977,60 @@ exports.getUserData = async (req, res, next) => {
     // For each purchased category, fetch the relevant data
     for (const category of purchasedCategories) {
       console.log(`📊 Fetching data for category: ${category}`);
-      
+
       // Handle different category types
       // You can fetch data based on the category name
       // For example, if they purchased "gaming", fetch data for gaming polls and users who voted in gaming polls
-      
+
       // Fetch users who voted in polls of this category
       // First, find all polls in this category
-      const categoryPolls = await Poll.find({ 
+      const categoryPolls = await Poll.find({
         category: category,
-        isPublished: true 
-      }).select('_id title');
-      
-      const pollIds = categoryPolls.map(p => p._id);
-      
+        isPublished: true,
+      }).select("_id title");
+
+      const pollIds = categoryPolls.map((p) => p._id);
+
       // Find votes in these polls
       const categoryVotes = await Vote.find({
-        poll: { $in: pollIds }
-      }).populate('user', 'name email location age gender phoneNumber');
-      
+        poll: { $in: pollIds },
+      }).populate("user", "name email location age gender phoneNumber");
+
       // Get unique users who voted in this category
-      const uniqueUserIds = [...new Set(categoryVotes.map(v => v.user?._id?.toString()))];
-      
+      const uniqueUserIds = [
+        ...new Set(categoryVotes.map((v) => v.user?._id?.toString())),
+      ];
+
       // Get full user details
       const usersWithDetails = await UserModel.find({
-        _id: { $in: uniqueUserIds }
-      }).select('name email phoneNumber location age gender createdAt isVerified lastLogin');
-      
+        _id: { $in: uniqueUserIds },
+      }).select(
+        "name email phoneNumber location age gender createdAt isVerified lastLogin",
+      );
+
       // Prepare category data
       responseData[category] = {
         categoryName: category,
         totalPolls: categoryPolls.length,
         totalVotes: categoryVotes.length,
         uniqueVoters: uniqueUserIds.length,
-        polls: categoryPolls.map(p => ({
+        polls: categoryPolls.map((p) => ({
           id: p._id,
           title: p.title,
         })),
-        users: usersWithDetails.map(u => ({
+        users: usersWithDetails.map((u) => ({
           id: u._id,
           name: u.name,
           email: u.email,
-          phoneNumber: u.phoneNumber || 'N/A',
-          location: u.location || 'N/A',
-          age: u.age || 'N/A',
-          gender: u.gender || 'N/A',
+          phoneNumber: u.phoneNumber || "N/A",
+          location: u.location || "N/A",
+          age: u.age || "N/A",
+          gender: u.gender || "N/A",
           registeredAt: u.createdAt,
           isVerified: u.isVerified,
-          lastLogin: u.lastLogin || 'Never',
+          lastLogin: u.lastLogin || "Never",
         })),
-        votes: categoryVotes.slice(0, limitNum).map(v => ({
+        votes: categoryVotes.slice(0, limitNum).map((v) => ({
           userId: v.user?._id,
           userName: v.user?.name,
           userEmail: v.user?.email,
@@ -955,23 +1038,34 @@ exports.getUserData = async (req, res, next) => {
           votedAt: v.createdAt,
         })),
       };
-      
-      console.log(`✅ Found ${categoryPolls.length} polls and ${uniqueUserIds.length} unique users for category: ${category}`);
+
+      console.log(
+        `✅ Found ${categoryPolls.length} polls and ${uniqueUserIds.length} unique users for category: ${category}`,
+      );
     }
 
     // Prepare purchase info
     const purchaseInfo = {
       subscriptionTier: user.subscription.tier,
       purchasedCategories: purchasedCategories,
-      maxCategoriesAllowed: user.subscription.maxCategories === 999 ? 'Unlimited' : user.subscription.maxCategories,
-      remainingCategories: user.subscription.maxCategories === 999 
-        ? 'Unlimited' 
-        : Math.max(0, user.subscription.maxCategories - purchasedCategories.length),
+      maxCategoriesAllowed:
+        user.subscription.maxCategories === 999
+          ? "Unlimited"
+          : user.subscription.maxCategories,
+      remainingCategories:
+        user.subscription.maxCategories === 999
+          ? "Unlimited"
+          : Math.max(
+              0,
+              user.subscription.maxCategories - purchasedCategories.length,
+            ),
       subscriptionValidUntil: user.subscription.endDate,
-      remainingDays: Math.ceil((user.subscription.endDate - new Date()) / (1000 * 60 * 60 * 24)),
+      remainingDays: Math.ceil(
+        (user.subscription.endDate - new Date()) / (1000 * 60 * 60 * 24),
+      ),
     };
 
-    console.log('✅ Final response data keys:', Object.keys(responseData));
+    console.log("✅ Final response data keys:", Object.keys(responseData));
 
     res.status(200).json({
       success: true,
@@ -983,9 +1077,8 @@ exports.getUserData = async (req, res, next) => {
         timestamp: new Date().toISOString(),
       },
     });
-
   } catch (error) {
-    console.error('Error in getUserData:', error);
+    console.error("Error in getUserData:", error);
     next(error);
   }
 };
