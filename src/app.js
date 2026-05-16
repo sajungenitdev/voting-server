@@ -7,6 +7,7 @@ const compression = require("compression");
 const cookieParser = require("cookie-parser");
 const hpp = require("hpp");
 const xss = require("xss");
+const fs = require("fs");
 
 const routes = require("./routes/v1/index");
 const errorHandler = require("./middleware/error.middleware");
@@ -14,6 +15,10 @@ const { apiLimiter } = require("./middleware/rateLimit.middleware");
 const AppError = require("./utils/AppError");
 
 const app = express();
+
+console.log("=== 🔧 CONFIGURING APP ===");
+
+// ==================== SECURITY MIDDLEWARE ====================
 
 // Custom NoSQL Injection Prevention
 const preventNoSQLInjection = (req, res, next) => {
@@ -67,7 +72,6 @@ const preventNoSQLInjection = (req, res, next) => {
   if (req.body) sanitize(req.body);
   if (req.query) sanitize(req.query);
   if (req.params) sanitize(req.params);
-
   next();
 };
 
@@ -105,7 +109,7 @@ app.use(
 app.use(xssProtection);
 app.use(preventNoSQLInjection);
 
-// ✅ FIXED CORS CONFIGURATION FOR RENDER
+// ==================== CORS CONFIGURATION ====================
 const allowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3001",
@@ -118,28 +122,25 @@ const allowedOrigins = [
   process.env.ADMIN_URL,
 ].filter(Boolean);
 
-// CORS setup - Allow all in production for testing
 app.use(
   cors({
     origin: function (origin, callback) {
-      // Allow requests with no origin (like mobile apps or curl)
+      // Allow requests with no origin (mobile apps, curl)
       if (!origin) return callback(null, true);
 
-      // For Render deployment - allow all origins temporarily
+      // Allow all in production (temporary for debugging)
       if (process.env.NODE_ENV === "production") {
         return callback(null, true);
       }
 
-      // For development - allow all origins
-      if (process.env.NODE_ENV !== "production") {
-        return callback(null, true);
-      }
-
       // Check against allowed origins
-      if (allowedOrigins.indexOf(origin) !== -1) {
+      if (
+        allowedOrigins.indexOf(origin) !== -1 ||
+        process.env.NODE_ENV !== "production"
+      ) {
         callback(null, true);
       } else {
-        console.warn(`⚠️ Blocked CORS request from origin: ${origin}`);
+        console.warn(`⚠️ CORS blocked: ${origin}`);
         callback(null, true); // Still allow for debugging
       }
     },
@@ -151,11 +152,13 @@ app.use(
       "X-Requested-With",
       "Accept",
       "Origin",
+      "Cookie",
     ],
     exposedHeaders: ["Authorization"],
   }),
 );
 
+// ==================== STANDARD MIDDLEWARE ====================
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cookieParser());
@@ -169,12 +172,14 @@ if (process.env.NODE_ENV === "development") {
   app.use(morgan("combined"));
 }
 
-// Favicon handler (prevents 404 warnings)
+// Favicon handler
 app.get("/favicon.ico", (req, res) => {
   res.status(204).end();
 });
 
-// Root route handler
+// ==================== HEALTH AND ROOT ROUTES ====================
+
+// Root route
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -193,11 +198,9 @@ app.get("/", (req, res) => {
     health: "/health",
     documentation: "/api/v1",
     timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV,
   });
 });
-
-// Apply rate limiting to API routes
-app.use("/api", apiLimiter);
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -211,15 +214,27 @@ app.get("/health", (req, res) => {
   });
 });
 
-// API routes - THIS IS CRITICAL
-app.use("/api/v1", routes);
+// Apply rate limiting to API routes
+app.use("/api", apiLimiter);
 
-// 404 handler for unmatched routes
+// ==================== API ROUTES ====================
+console.log("Mounting API routes...");
+
+try {
+  app.use("/api/v1", routes);
+  console.log("✅ API routes mounted successfully");
+} catch (error) {
+  console.error("❌ Failed to mount API routes:", error.message);
+}
+
+// ==================== 404 HANDLER ====================
 app.use((req, res, next) => {
   next(new AppError(404, `Cannot find ${req.originalUrl} on this server`));
 });
 
-// Global error handler
+// ==================== GLOBAL ERROR HANDLER ====================
 app.use(errorHandler);
+
+console.log("✅ App configuration complete");
 
 module.exports = app;
