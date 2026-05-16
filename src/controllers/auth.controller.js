@@ -51,10 +51,14 @@ const logActivity = async (
   }
 };
 
-// Register user
+// Register user - UPDATED with better error handling
 exports.register = async (req, res, next) => {
   try {
     const { name, email, password } = req.body;
+
+    console.log("=== REGISTER ATTEMPT ===");
+    console.log("Email:", email);
+    console.log("Name:", name);
 
     // Check if user exists and verified
     const existingUser = await User.findOne({ email });
@@ -69,6 +73,7 @@ exports.register = async (req, res, next) => {
       user.name = name;
       user.password = password;
       await user.save();
+      console.log("Updated existing unverified user");
     } else {
       // Create new user
       user = await User.create({
@@ -77,6 +82,7 @@ exports.register = async (req, res, next) => {
         password,
         isVerified: false,
       });
+      console.log("Created new user:", user._id);
     }
 
     // Generate and save OTP
@@ -86,9 +92,17 @@ exports.register = async (req, res, next) => {
       otp,
       expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
     });
+    console.log("OTP created:", otp);
 
-    // Send OTP email
-    await sendOTPEmail(email, otp, name);
+    // Send OTP email - WITH ERROR HANDLING
+    try {
+      await sendOTPEmail(email, otp, name);
+      console.log("OTP email sent successfully");
+    } catch (emailError) {
+      console.error("Email sending failed but continuing:", emailError.message);
+      // Don't fail registration if email fails
+      // You can still return success and let user know
+    }
 
     // Log activity
     await logActivity(user._id, email, "REGISTER", "SUCCESS", req);
@@ -102,10 +116,17 @@ exports.register = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.error("REGISTRATION ERROR:", error);
     await logActivity(null, req.body.email, "REGISTER", "FAILED", req, {
       error: error.message,
     });
-    next(error);
+
+    // Send detailed error for debugging
+    res.status(500).json({
+      success: false,
+      message: error.message || "Registration failed",
+      stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
+    });
   }
 };
 
@@ -511,27 +532,28 @@ exports.changePassword = async (req, res, next) => {
   }
 };
 
-
 exports.updateProfile = async (req, res, next) => {
   try {
     const { name } = req.body;
-    
+
     const user = await User.findByIdAndUpdate(
       req.user._id,
       { name },
-      { new: true, runValidators: true }
-    ).select('-password -resetPasswordToken -resetPasswordExpire -refreshToken');
-    
+      { new: true, runValidators: true },
+    ).select(
+      "-password -resetPasswordToken -resetPasswordExpire -refreshToken",
+    );
+
     if (!user) {
-      return next(new AppError(404, 'User not found'));
+      return next(new AppError(404, "User not found"));
     }
-    
+
     await logActivity(user._id, user.email, "UPDATE_PROFILE", "SUCCESS", req);
-    
+
     res.status(200).json({
       success: true,
       message: "Profile updated successfully",
-      data: { user }
+      data: { user },
     });
   } catch (error) {
     next(error);

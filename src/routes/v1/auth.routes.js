@@ -109,6 +109,30 @@ const refreshTokenValidation = [
 ];
 
 // ==================== TEST ROUTE ====================
+// Add this debug route at the top of your auth.routes.js
+router.post("/debug-register", async (req, res) => {
+  console.log("=== DEBUG REGISTER CALLED ===");
+  console.log("Body:", req.body);
+
+  try {
+    const { name, email, password } = req.body;
+
+    // Simple response without any database operations
+    res.json({
+      success: true,
+      message: "Debug route working",
+      received: { name, email, passwordLength: password?.length },
+      environment: process.env.NODE_ENV,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
 router.get("/test", (req, res) => {
   res.json({
     success: true,
