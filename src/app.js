@@ -16,9 +16,35 @@ const app = express();
 console.log("=== 🔧 CONFIGURING APP ===");
 
 // ==================== CORS ====================
+// ==================== CORS CONFIGURATION ====================
+const allowedOrigins = [
+  "https://voting-admin-dashboard-ecru.vercel.app", // ✅ Your admin dashboard
+  "https://voting-frontend-two-nu.vercel.app/", // ✅ Your main frontend
+  "https://voting-server-rhkg.onrender.com/", // Your backend itself
+  "http://localhost:3000", // Local development
+  "http://localhost:3001", // Alternative local port
+  "http://localhost:5000", // Local backend
+  process.env.FRONTEND_URL, // Environment variable
+  process.env.ADMIN_URL, // Environment variable
+].filter(Boolean);
+
 app.use(
   cors({
-    origin: true,
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps, curl, server-to-server)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Check if the origin is allowed
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn(`⚠️ CORS blocked origin: ${origin}`);
+        callback(null, true); // Temporarily allow all for debugging
+        // callback(new Error(`Origin ${origin} not allowed by CORS`)); // Use this in production
+      }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allowedHeaders: [
@@ -26,7 +52,10 @@ app.use(
       "Authorization",
       "Accept",
       "X-Requested-With",
+      "Origin",
+      "Cookie",
     ],
+    exposedHeaders: ["Authorization"],
   }),
 );
 
