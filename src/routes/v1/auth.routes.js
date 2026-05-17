@@ -15,13 +15,15 @@ const {
   getMe,
   changePassword,
   updateProfile,
+  googleAuth,
+  googleCallback,
+  googleTokenAuth,
 } = require("../../controllers/auth.controller");
 
 const router = express.Router();
 
 // ==================== VALIDATION RULES ====================
 
-// Register validation
 const registerValidation = [
   body("name")
     .trim()
@@ -40,7 +42,6 @@ const registerValidation = [
     .withMessage("Password must contain at least one number"),
 ];
 
-// Login validation
 const loginValidation = [
   body("email")
     .isEmail()
@@ -49,7 +50,6 @@ const loginValidation = [
   body("password").notEmpty().withMessage("Password is required"),
 ];
 
-// OTP validation
 const otpValidation = [
   body("email")
     .isEmail()
@@ -62,7 +62,6 @@ const otpValidation = [
     .withMessage("OTP must contain only numbers"),
 ];
 
-// Resend OTP validation
 const resendOTPValidation = [
   body("email")
     .isEmail()
@@ -70,7 +69,6 @@ const resendOTPValidation = [
     .normalizeEmail(),
 ];
 
-// Forgot password validation
 const forgotPasswordValidation = [
   body("email")
     .isEmail()
@@ -78,7 +76,6 @@ const forgotPasswordValidation = [
     .normalizeEmail(),
 ];
 
-// Reset password validation
 const resetPasswordValidation = [
   body("token").notEmpty().withMessage("Reset token is required"),
   body("password")
@@ -88,7 +85,6 @@ const resetPasswordValidation = [
     .withMessage("Password must contain at least one number"),
 ];
 
-// Change password validation
 const changePasswordValidation = [
   body("currentPassword")
     .notEmpty()
@@ -100,16 +96,12 @@ const changePasswordValidation = [
     .withMessage("New password must contain at least one number"),
 ];
 
-// Refresh token validation
-const refreshTokenValidation = [
-  body("refreshToken")
-    .optional()
-    .notEmpty()
-    .withMessage("Refresh token is required"),
+const googleTokenValidation = [
+  body("token").notEmpty().withMessage("Google token is required"),
 ];
 
-// ==================== TEST ROUTE ====================
-// Add this debug route at the top of your auth.routes.js
+// ==================== TEST ROUTES ====================
+
 router.post("/debug-register", async (req, res) => {
   console.log("=== DEBUG REGISTER CALLED ===");
   console.log("Body:", req.body);
@@ -117,7 +109,6 @@ router.post("/debug-register", async (req, res) => {
   try {
     const { name, email, password } = req.body;
 
-    // Simple response without any database operations
     res.json({
       success: true,
       message: "Debug route working",
@@ -141,7 +132,30 @@ router.get("/test", (req, res) => {
   });
 });
 
-// ==================== PUBLIC ROUTES ====================
+// ==================== GOOGLE AUTH ROUTES ====================
+
+/**
+ * @route   GET /api/v1/auth/google
+ * @desc    Redirect to Google OAuth login page
+ * @access  Public
+ */
+router.get("/google", googleAuth);
+
+/**
+ * @route   GET /api/v1/auth/google/callback
+ * @desc    Google OAuth callback endpoint
+ * @access  Public
+ */
+router.get("/google/callback", googleCallback);
+
+/**
+ * @route   POST /api/v1/auth/google-token
+ * @desc    Authenticate with Google token (One-click login)
+ * @access  Public
+ */
+router.post("/google-token", googleTokenAuth);
+
+// ==================== PUBLIC AUTH ROUTES ====================
 
 /**
  * @route   POST /api/v1/auth/register

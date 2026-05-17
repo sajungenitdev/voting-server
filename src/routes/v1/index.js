@@ -8,12 +8,12 @@ const voteRoutes = require("./vote.routes");
 const categoryRoutes = require("./category.routes");
 const commentRoutes = require("./comment.routes");
 const b2bRoutes = require("./b2b.routes");
+// ❌ REMOVE THIS LINE: const googleRoutes = require("./google.routes");
 
 const router = express.Router();
 
-// ==================== DEBUG ROUTES (Remove after fixing) ====================
+// ==================== DEBUG ROUTES ====================
 
-// Debug: Check file system paths
 router.get("/debug/paths", (req, res) => {
   const basePath = path.join(__dirname, "../..");
 
@@ -52,7 +52,6 @@ router.get("/debug/paths", (req, res) => {
   });
 });
 
-// Debug: Check if auth routes are mounted
 router.get("/debug/auth-status", (req, res) => {
   res.json({
     success: true,
@@ -75,7 +74,6 @@ router.get("/debug/auth-status", (req, res) => {
   });
 });
 
-// Simple ping test
 router.get("/ping", (req, res) => {
   res.json({
     success: true,
@@ -86,7 +84,6 @@ router.get("/ping", (req, res) => {
 
 // ==================== MAIN ROUTES ====================
 
-// Root route handler
 router.get("/", (req, res) => {
   res.json({
     success: true,
@@ -113,22 +110,14 @@ router.get("/", (req, res) => {
   });
 });
 
-// Mount routes with error handling
+// Mount routes
 try {
-  console.log("✅ Mounting auth routes at /auth");
   router.use("/auth", authRoutes);
+  console.log("✅ Auth routes mounted at /auth");
 } catch (error) {
   console.error("❌ Failed to mount auth routes:", error.message);
-  router.use("/auth", (req, res) => {
-    res.status(500).json({
-      success: false,
-      message: "Auth routes failed to load",
-      error: error.message,
-    });
-  });
 }
 
-// Mount other routes
 try {
   router.use("/admin", adminRoutes);
   console.log("✅ Admin routes mounted");
@@ -171,7 +160,6 @@ try {
   console.error("❌ Failed to mount b2b routes:", error.message);
 }
 
-// Test route
 router.get("/status", (req, res) => {
   res.json({
     success: true,
@@ -182,7 +170,6 @@ router.get("/status", (req, res) => {
   });
 });
 
-// Health check for API
 router.get("/health", (req, res) => {
   res.json({
     success: true,
